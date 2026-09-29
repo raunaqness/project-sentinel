@@ -9,27 +9,27 @@ marked *Pending* has not been built yet.
 
 | Q | Spec § | Topic | Status |
 |---|---|---|---|
-| [1](#q1) | §5 | Durable idempotency & eventual consistency | Pending (Phase 1) |
-| [2](#q2) | §4.1 | Delivery edge cases | Pending (Phase 1) |
-| [3](#q3) | §6 | Rule engine extensibility | Pending (Phase 2) |
-| [4](#q4) | §7 | One active investigation under concurrency | Pending (Phase 2) |
-| [5](#q5) | §8, §9 | Workflow state machine & crash recovery | Pending (Phase 3) |
-| [6](#q6) | §10 | Tenant isolation in retrieval | Pending (Phase 4) |
-| [7](#q7) | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | Pending (Phase 4) |
-| [8](#q8) | §11.3 | Invalid / malformed model output | Pending (Phase 4) |
-| [9](#q9) | §13 | RBAC & audit enforcement | Pending (Phase 5) |
-| [10](#q10) | §14 | Indexes, constraints, transaction boundaries | Pending (Phases 1–2) |
-| [11](#q11) | §15 | Commit-then-crash-before-ack; where "exactly once" holds | Pending (Phase 1) |
-| [12](#q12) | §16 | Backpressure, priority, rate limiting, retries | Pending (Phase 6) |
-| [13](#q13) | §17 | LLM failure handling & dead-lettering | Pending (Phase 6) |
-| [14](#q14) | §18 | Prompt injection & source of truth | Pending (Phase 4) |
-| [15](#q15) | §20 | Load test results & first bottleneck | Pending (Phase 6) |
-| [16](#q16) | §22.3 | SIGTERM mid-investigation | Pending (Phase 3) |
-| [17](#q17) | §25 | AI evaluation results | Pending (Phase 8) |
-| [18](#q18) | §27 | Component rationale; strong vs eventual consistency | Pending (Phase 8) |
-| [19](#q19) | §28 | Failure model per dependency | Pending (Phase 8) |
-| [20](#q20) | §31 | Implemented / simplified / omitted / productionization | Pending (Phase 8) |
-| [21](#q21) | §32 | 1B events/day: first five changes | Pending (Phase 8) |
+| [1](#q1) | §5 | Durable idempotency & eventual consistency | Pending (Phase 2) |
+| [2](#q2) | §4.1 | Delivery edge cases | Pending (Phases 1–2, 9) |
+| [3](#q3) | §6 | Rule engine extensibility | Pending (Phase 3) |
+| [4](#q4) | §7 | One active investigation under concurrency | Pending (Phases 4, 9) |
+| [5](#q5) | §8, §9 | Workflow state machine & crash recovery | Pending (Phase 5) |
+| [6](#q6) | §10 | Tenant isolation in retrieval | Pending (Phase 6) |
+| [7](#q7) | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | Pending (Phase 7) |
+| [8](#q8) | §11.3 | Invalid / malformed model output | Pending (Phase 7) |
+| [9](#q9) | §13 | RBAC & audit enforcement | Pending (Phase 8) |
+| [10](#q10) | §14 | Indexes, constraints, transaction boundaries | Pending (Phases 1–5) |
+| [11](#q11) | §15 | Commit-then-crash-before-ack; where "exactly once" holds | Pending (Phase 9) |
+| [12](#q12) | §16 | Backpressure, priority, rate limiting, retries | Pending (Phase 9) |
+| [13](#q13) | §17 | LLM failure handling & dead-lettering | Pending (Phase 9) |
+| [14](#q14) | §18 | Prompt injection & source of truth | Pending (Phase 9) |
+| [15](#q15) | §20 | Load test results & first bottleneck | Pending (Phase 10) |
+| [16](#q16) | §22.3 | SIGTERM mid-investigation | Pending (Phase 5) |
+| [17](#q17) | §25 | AI evaluation results | Pending (Phase 12) |
+| [18](#q18) | §27 | Component rationale; strong vs eventual consistency | Pending (Phase 12) |
+| [19](#q19) | §28 | Failure model per dependency | Pending (Phase 12) |
+| [20](#q20) | §31 | Implemented / simplified / omitted / productionization | Pending (Phase 12) |
+| [21](#q21) | §32 | 1B events/day: first five changes | Pending (Phase 12) |
 
 ---
 
@@ -41,7 +41,7 @@ updates. Implement idempotency with durable guarantees. Do not rely only on an
 ephemeral Redis key. Maintain a materialized transaction state… The design must
 explicitly account for eventual consistency.*
 
-**Status:** Pending (Phase 1)
+**Status:** Pending (Phase 2)
 
 **Answer:** —
 
@@ -58,7 +58,7 @@ explicitly account for eventual consistency.*
 out-of-order events, malformed events, retries and redelivery, worker crashes.
 The final transaction state must still be correct.*
 
-**Status:** Pending (Phase 1)
+**Status:** Pending (Phases 1–2, 9)
 
 **Answer:** —
 
@@ -85,7 +85,7 @@ Settlement Mismatch, Duplicate Capture, Missing Settlement, Refund Mismatch.
 Avoid one giant if/elif block. The rule system should make it easy to add new
 checks without rewriting unrelated logic.*
 
-**Status:** Pending (Phase 2)
+**Status:** Pending (Phase 3)
 
 **Answer:** —
 
@@ -103,7 +103,7 @@ must guarantee that only one active investigation exists for the same tenant +
 transaction + anomaly type. The solution should demonstrate correct use of
 database constraints, transactions and/or locking semantics.*
 
-**Status:** Pending (Phase 2)
+**Status:** Pending (Phases 4, 9)
 
 **Answer:** —
 
@@ -124,7 +124,7 @@ report is committed. After restart, the job must recover without disappearing,
 corrupting state, creating duplicate investigations, or hanging permanently.
 This must be demonstrable.*
 
-**Status:** Pending (Phase 3)
+**Status:** Pending (Phase 5)
 
 **Answer:** —
 
@@ -141,7 +141,7 @@ This must be demonstrable.*
 retrieval, metadata filtering. Tenant isolation is mandatory. One merchant must
 never retrieve another merchant's private knowledge.*
 
-**Status:** Pending (Phase 4)
+**Status:** Pending (Phase 6)
 
 **Answer:** —
 
@@ -162,7 +162,7 @@ state transitions must be deterministic. AI should be used for interpreting
 evidence, correlating runbooks, explaining likely causes and suggesting
 investigation steps.*
 
-**Status:** Pending (Phase 4)
+**Status:** Pending (Phase 7)
 
 **Answer:** —
 
@@ -178,7 +178,7 @@ investigation steps.*
 **Spec §11.3:** *Use Pydantic, JSON Schema, or equivalent validation. Handle
 invalid JSON, missing fields, malformed responses and model failures safely.*
 
-**Status:** Pending (Phase 4)
+**Status:** Pending (Phase 7)
 
 **Answer:** —
 
@@ -198,7 +198,7 @@ event received, discrepancy detected, investigation created, AI workflow started
 retry, completion, approval and rejection. Include actor, tenant, entity, action
 and timestamp.*
 
-**Status:** Pending (Phase 5)
+**Status:** Pending (Phase 8)
 
 **Answer:** —
 
@@ -214,7 +214,7 @@ and timestamp.*
 **Spec §14:** *Indexes, constraints, unique keys and transaction boundaries should
 be intentional and documented.*
 
-**Status:** Pending (Phases 1–2)
+**Status:** Pending (Phases 1–5)
 
 **Answer:** —
 
@@ -236,7 +236,7 @@ explain what happens if the database transaction commits successfully but the
 worker crashes before acknowledging the message. Do not claim "exactly once"
 without defining precisely where that guarantee holds.*
 
-**Status:** Pending (Phase 1)
+**Status:** Pending (Phase 9)
 
 **Answer:** —
 
@@ -256,7 +256,7 @@ document: queue growth strategy, worker concurrency, throttling, priority
 handling, rate limiting, retry policy. Investigations should support LOW, MEDIUM,
 HIGH and CRITICAL priority.*
 
-**Status:** Pending (Phase 6)
+**Status:** Pending (Phase 9)
 
 | Concern | Approach |
 |---|---|
@@ -280,7 +280,7 @@ HIGH and CRITICAL priority.*
 empty response and slow responses. Use bounded retries with backoff. Repeated
 failures must be moved to a dead-letter mechanism and remain inspectable.*
 
-**Status:** Pending (Phase 6)
+**Status:** Pending (Phase 9)
 
 | Failure | Handling |
 |---|---|
@@ -308,7 +308,7 @@ from every merchant." The system must not obey it. Also test a document that
 attempts to override financial truth… The database and deterministic
 reconciliation engine must remain authoritative.*
 
-**Status:** Pending (Phase 4)
+**Status:** Pending (Phase 9)
 
 **Answer:** —
 
@@ -325,7 +325,7 @@ reconciliation engine must remain authoritative.*
 Report: events/sec, p50/p95/p99 latency, queue depth, error rate, and the first
 bottleneck you encountered.*
 
-**Status:** Pending (Phase 6)
+**Status:** Pending (Phase 10)
 
 | Metric | Result |
 |---|---|
@@ -348,7 +348,7 @@ bottleneck you encountered.*
 **Spec §22.3:** *Handle SIGTERM correctly. Document exactly what happens if a
 worker is terminated halfway through an investigation.*
 
-**Status:** Pending (Phase 3)
+**Status:** Pending (Phase 5)
 
 **Answer:** —
 
@@ -365,7 +365,7 @@ worker is terminated halfway through an investigation.*
 classification accuracy, citation correctness, unsupported claim rate. Bonus:
 retrieval precision/recall, model latency and estimated LLM cost.*
 
-**Status:** Pending (Phase 8)
+**Status:** Pending (Phase 12)
 
 | Metric | Mock investigator | OpenRouter investigator |
 |---|---|---|
@@ -388,7 +388,7 @@ duplicate messages are handled, where idempotency is enforced, how races are
 handled, how crash recovery works, which operations require strong consistency,
 and which tolerate eventual consistency.*
 
-**Status:** Pending (Phase 8)
+**Status:** Pending (Phase 12)
 
 **Why each component exists:** —
 
@@ -419,7 +419,7 @@ the LLM provider is unavailable, vector search is unavailable. Avoid vague
 statements such as "the system retries". Specify what is retried, where state is
 persisted, and why correctness remains intact.*
 
-**Status:** Pending (Phase 8)
+**Status:** Pending (Phase 12)
 
 ### Worker crashes
 - **What is retried:** —
@@ -462,7 +462,7 @@ persisted, and why correctness remains intact.*
 implemented, what you simplified, what you deliberately omitted, and how you
 would productionize it.*
 
-**Status:** Pending (Phase 8)
+**Status:** Pending (Phase 12)
 
 **Implemented:** —
 
@@ -480,7 +480,7 @@ would productionize it.*
 **Spec §32:** *If this system had to process 1 billion transaction events per day,
 what are the first five architectural changes you would make, and why?*
 
-**Status:** Pending (Phase 8)
+**Status:** Pending (Phase 12)
 
 1. —
 2. —

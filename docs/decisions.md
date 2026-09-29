@@ -176,8 +176,9 @@ report that fails verification — it cannot change financial truth.
 installed package.
 
 **Decision:** `src/sentinel/` package; uv for dependency management and lockfile;
-ruff for lint and format; mypy for type checks; pytest with testcontainers for
-integration tests.
+ruff for lint and format; mypy for type checks; pytest, with integration tests
+run against the same docker compose stack that is deployed.
 
 **Consequences:** Import mistakes surface in tests rather than in deployment; one
-lockfile shared by CI and Docker.
+lockfile shared by CI and Docker. No testcontainers: one fewer dependency, and tests
+exercise the real deployment configuration.

@@ -20,17 +20,21 @@ content.
 
 Under active development. Progress is tracked phase by phase in [plan.md](plan.md).
 
-| Phase | Scope | Status |
+| Phase | Feature | Status |
 |---|---|---|
-| 0 | Foundations | In progress |
-| 1 | Ingestion, idempotency & transaction state | Not started |
-| 2 | Reconciliation & investigation creation | Not started |
-| 3 | Workflow engine & crash recovery | Not started |
-| 4 | Knowledge base, retrieval & AI investigator | Not started |
-| 5 | Human review, RBAC & security | Not started |
-| 6 | Resilience under load & observability | Not started |
-| 7 | Deployment & CI | Not started |
-| 8 | Evaluation, demo & final documentation | Not started |
+| 0 | Foundations | Done |
+| 1 | Event ingestion (§4) | In progress |
+| 2 | Idempotency & transaction state (§5) | Not started |
+| 3 | Reconciliation engine (§6) | Not started |
+| 4 | Investigation creation (§7) | Not started |
+| 5 | Investigation workflow & crash recovery (§8–9) | Not started |
+| 6 | Knowledge base & retrieval (§10) | Not started |
+| 7 | AI investigator (§11) | Not started |
+| 8 | Review APIs, multi-tenancy, RBAC & audit (§12–13) | Not started |
+| 9 | Hardening (§14–18) | Not started |
+| 10 | Observability, load & failure injection (§19–21) | Not started |
+| 11 | Kubernetes & CI (§22–23) | Not started |
+| 12 | Tests, evaluation, docs & demo (§24–32) | Not started |
 
 ## How It Works
 
