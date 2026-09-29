@@ -133,8 +133,8 @@ crash_case() {  # crash_case <label> <txn> <metadata-json>
   expect "attempts" "$(invs "$t" | jq -r '.[0].attempts')" 2
   echo "  worker log for $t:"
   docker compose logs --no-log-prefix investigation-worker \
-    | grep '^{' | jq -c --arg t "$t" 'select(.transaction_id==$t) | {ts, msg, attempt, fail_after_step, remaining}' \
-    | sed 's/^/    /'
+    | grep -o '{.*' | jq -c --arg t "$t" 'select(.transaction_id==$t) | {ts, msg, attempt, fail_after_step, remaining}' \
+    | sed 's/^/    /' || true  # informational only; must never abort the run
 }
 
 scenario_d1() {
@@ -216,8 +216,8 @@ scenario_s() {
   local id; id=$(invs "$t" | jq -r '.[0].id')
   expect "in-flight step finished and checkpointed" "$(invs "$t" | jq -r '.[0].current_step')" AI_ANALYSIS_COMPLETED
   expect "lease released on shutdown" "$(psql_q "select coalesce(lease_owner, 'released') from investigations where id='$id'")" released
-  docker compose logs --no-log-prefix investigation-worker | grep '^{' \
-    | jq -c --arg t "$t" 'select(.transaction_id==$t or .msg=="stopped") | {ts, msg, next_step}' | tail -4 | sed 's/^/    /'
+  docker compose logs --no-log-prefix investigation-worker | grep -o '{.*' \
+    | jq -c --arg t "$t" 'select(.transaction_id==$t or .msg=="stopped") | {ts, msg, next_step}' | tail -4 | sed 's/^/    /' || true
   echo "  starting the worker again..."
   docker compose start investigation-worker >/dev/null 2>&1
   wait_for 30 sh -c "curl -s -H 'X-API-Key: $ADMIN_KEY' '$API/investigations?transaction_id=$t' | jq -e '.[] | select(.status==\"AWAITING_REVIEW\")'"
@@ -287,8 +287,8 @@ scenario_look() {
   fi
   echo "JSON logs across services for $b:"
   docker compose logs --no-log-prefix api event-consumer scheduler investigation-worker \
-    | grep '^{' | jq -c --arg t "$b" 'select(.transaction_id==$t) | {ts, service, msg, state}' \
-    | sort | sed 's/^/  /'
+    | grep -o '{.*' | jq -c --arg t "$b" 'select(.transaction_id==$t) | {ts, service, msg, state}' \
+    | sort | sed 's/^/  /' || true
 }
 
 # --- main ------------------------------------------------------------------
