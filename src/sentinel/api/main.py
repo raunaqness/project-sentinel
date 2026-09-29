@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from sentinel import __version__
-from sentinel.api.routes import events
+from sentinel.api.routes import events, transactions
 from sentinel.db.session import get_engine
 from sentinel.messaging.kafka import make_producer
 from sentinel.observability.logging import configure_logging
@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Project Sentinel", version=__version__, lifespan=lifespan)
 app.include_router(events.router)
+app.include_router(transactions.router)
 
 
 @app.get("/health", tags=["ops"])

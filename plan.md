@@ -88,12 +88,12 @@ Spec: §22.1, §23 (partial), §27 (skeletons)
 **Done when:** `docker compose up` → POST an event → GET shows it; posting it twice
 still shows one row. Unit test for validation, one integration test against compose.
 
-### Phase 2 — Idempotency & Transaction State (§5)
+### Phase 2 — Idempotency & Transaction State (§5) ✅
 
-- [ ] `transactions` table (materialized state per tenant + transaction)
-- [ ] Order-independent state reducer (`domain/transaction_state.py`)
-- [ ] Event insert + state update in one DB transaction; duplicates skip the update
-- [ ] `GET /transactions/{id}`
+- [x] `transactions` table (materialized state per tenant + transaction)
+- [x] Order-independent state reducer (`domain/transaction_state.py`)
+- [x] Event insert + state update in one DB transaction; duplicates skip the update
+- [x] `GET /transactions/{id}`
 
 **Done when:** out-of-order and duplicate events produce the correct final state.
 

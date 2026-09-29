@@ -1,7 +1,8 @@
-"""Consumes events from Kafka and persists them.
+"""Consumes events from Kafka, persists them and rebuilds transaction state.
 
-Offsets are committed only after the DB transaction commits. A crash in
-between causes redelivery, which the (tenant_id, event_id) unique key absorbs.
+The event insert and the state rebuild share one DB transaction, and offsets
+are committed only after it commits. A crash in between causes redelivery,
+which the (tenant_id, event_id) unique key absorbs.
 """
 
 import asyncio
@@ -17,6 +18,7 @@ from sentinel.domain.events import EventIn
 from sentinel.messaging.kafka import EVENTS_TOPIC, make_consumer
 from sentinel.observability.logging import configure_logging
 from sentinel.services.ingestion import store_event
+from sentinel.services.transactions import rebuild_state
 
 log = logging.getLogger("sentinel.event_consumer")
 
@@ -33,15 +35,20 @@ async def handle(record: ConsumerRecord[bytes, bytes]) -> None:
     try:
         async with get_sessionmaker()() as session, session.begin():
             inserted = await store_event(session, event)
+            if inserted:
+                state = await rebuild_state(session, event.tenant_id, event.transaction_id)
     except IntegrityError:
         log.error("rejected event_id=%s tenant_id=%s", event.event_id, event.tenant_id)
         return
+    if not inserted:
+        log.info("duplicate event_id=%s tenant_id=%s", event.event_id, event.tenant_id)
+        return
     log.info(
-        "%s event_id=%s tenant_id=%s transaction_id=%s",
-        "stored" if inserted else "duplicate",
+        "stored event_id=%s tenant_id=%s transaction_id=%s state=%s",
         event.event_id,
         event.tenant_id,
         event.transaction_id,
+        state.state,
     )
 
 

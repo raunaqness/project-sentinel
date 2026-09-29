@@ -52,3 +52,28 @@ class Event(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, server_default="{}")
+
+
+class Transaction(Base):
+    """Materialized state per (tenant, transaction); rebuilt from `events`."""
+
+    __tablename__ = "transactions"
+
+    tenant_id: Mapped[str] = mapped_column(Text, ForeignKey("tenants.id"), primary_key=True)
+    transaction_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    payment_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    payment_status: Mapped[str | None] = mapped_column(Text)
+    payment_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    capture_count: Mapped[int]
+    ledger_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    ledger_status: Mapped[str | None] = mapped_column(Text)
+    settlement_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    settlement_status: Mapped[str | None] = mapped_column(Text)
+    internal_refund_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    gateway_refund_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    currency: Mapped[str | None] = mapped_column(CHAR(3))
+    event_count: Mapped[int]
+    first_event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    state: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

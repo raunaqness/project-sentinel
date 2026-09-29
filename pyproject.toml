@@ -55,7 +55,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--import-mode=importlib"
 asyncio_mode = "auto"
 markers = [
-    "integration: needs Docker (testcontainers)",
+    "integration: runs against the compose stack (make up)",
 ]
