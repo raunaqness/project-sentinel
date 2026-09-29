@@ -61,13 +61,30 @@ Rationale for each choice: [docs/decisions.md](docs/decisions.md).
 
 ## Quickstart
 
-*Pending (Phase 0 / Phase 7).*
+```bash
+cp .env.example .env     # set POSTGRES_PASSWORD (letters/digits) in both places it appears
+make up                  # build, migrate, start everything; waits until healthy
+curl -s localhost:8000/health
+scripts/walkthrough.sh   # send real events through the stack and check the outcomes
+```
 
-## Demo
+- **Port clashes:** change `SENTINEL_API_PORT` / `POSTGRES_PORT` in `.env`.
+- **On a shared VPS:** use
+  `COMPOSE_FILE=docker-compose.yml:docker-compose.vps.yml:docker-compose.dev.yml` for
+  memory limits plus fast demo timings.
+- Swagger UI: `http://localhost:8000/docs`.
 
-*Pending (Phase 8).* Happy path (events → mismatch → investigation → AI report →
-approve/reject) and crash-recovery demo (kill worker mid-investigation → restart
-→ recovery).
+`scripts/walkthrough.sh` runs these scenarios (all by default, or pick some,
+e.g. `scripts/walkthrough.sh b d1`), printing ✔/✘ for each expectation:
+
+| Scenario | What it shows |
+|---|---|
+| `a` | Healthy transaction → `MATCHED`, no investigation |
+| `b` | Spec example (settlement, ledger, payment, duplicate payment) → `DISCREPANCY`, one investigation with a report |
+| `c` | Missing ledger opened by the scheduler, then resolved when the ledger arrives |
+| `d1` | Worker hard-killed after the LLM answered, before commit (§9) → resumes, finishes once |
+| `d2` | `FAIL_AFTER_STEP=RESULT_VERIFIED` on the worker (§21) → resumes, reuses the LLM result |
+| `look` | Audit trail, cross-service JSON logs and DB rows for the run |
 
 ## Running Tests
 

@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test test-integration check up down logs ps config
+.PHONY: install lint format typecheck test test-integration check up down logs ps config walkthrough
 
 install:        ## Install dependencies
 	uv sync
@@ -36,3 +36,6 @@ ps:
 
 config:         ## Validate compose files
 	docker compose config -q
+
+walkthrough:    ## Send real events through the running stack and check the outcomes
+	scripts/walkthrough.sh
