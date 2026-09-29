@@ -15,6 +15,7 @@ what we rejected, and the consequences we accept.
 | [008](#adr-008) | OpenRouter via the OpenAI SDK, behind swappable interfaces | Accepted |
 | [009](#adr-009) | Deterministic reconciliation; AI only interprets | Accepted |
 | [010](#adr-010) | `src/` layout with uv, ruff, mypy, pytest | Accepted |
+| [011](#adr-011) | Audit trail in Postgres; JSON logs on stdout | Accepted |
 
 ---
 
@@ -182,3 +183,26 @@ run against the same docker compose stack that is deployed.
 **Consequences:** Import mistakes surface in tests rather than in deployment; one
 lockfile shared by CI and Docker. No testcontainers: one fewer dependency, and tests
 exercise the real deployment configuration.
+
+---
+
+<a id="adr-011"></a>
+## ADR-011 — Audit trail in Postgres; JSON logs on stdout
+
+**Context:** We need a durable, queryable history of what the system did (§13 audit)
+and operational logs that can be correlated across services (§19), on a VPS with
+little spare memory.
+
+**Decision:** Two separate records.
+- **`audit_logs` table:** append-only business actions (actor, tenant, action,
+  entity, details, timestamp), written in the *same DB transaction* as the change
+  they describe, so the audit can never disagree with the data.
+- **JSON logs on stdout:** one object per line with `service`, `worker_id`,
+  `request_id`, `tenant_id`, `transaction_id`, `event_id` from a context variable.
+
+**Alternatives:** A log aggregation stack (Loki/Grafana, ELK) — 300 MB+ on a
+memory-constrained host; audit via log files — not transactional, not tenant-scoped.
+
+**Consequences:** `docker compose logs | jq` traces a transaction across services
+today; any aggregator can ingest the same JSON later without code changes.
+

@@ -16,6 +16,9 @@ x-app: &app
     SENTINEL_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sentinel}
     SENTINEL_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
     SENTINEL_REDIS_URL: redis://redis:6379/0
+    SENTINEL_MISSING_SETTLEMENT_SECONDS: ${SENTINEL_MISSING_SETTLEMENT_SECONDS:-86400}
+    SENTINEL_RECONCILIATION_GRACE_SECONDS: ${SENTINEL_RECONCILIATION_GRACE_SECONDS:-300}
+    SENTINEL_SCHEDULER_INTERVAL_SECONDS: ${SENTINEL_SCHEDULER_INTERVAL_SECONDS:-30}
   logging: *default-logging
 
 services:
@@ -45,6 +48,12 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       redpanda: { condition: service_healthy }
+
+  scheduler:
+    <<: *app
+    command: ["python", "-m", "sentinel.workers.scheduler"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
 
   postgres:
     image: pgvector/pgvector:pg16

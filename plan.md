@@ -55,7 +55,7 @@ The system is deployed with Docker Compose on a shared VPS after each phase.
 | API | 256 MB | 1 uvicorn worker |
 | Event consumer | 256 MB | |
 | Investigation worker | 256 MB | |
-| Scheduler | 128 MB | |
+| Scheduler | 128 MB | Added in Phase 3 |
 | **Total ceiling** | **~2.3 GB** | Typical idle ~1.5 GB |
 
 ## Phases
@@ -97,12 +97,20 @@ still shows one row. Unit test for validation, one integration test against comp
 
 **Done when:** out-of-order and duplicate events produce the correct final state.
 
-### Phase 3 — Reconciliation Engine (§6)
+### Phase 3 — Reconciliation Engine (§6) ✅
 
-- [ ] Rule interface + registry
-- [ ] Rules: missing ledger, settlement mismatch, duplicate capture, missing
-      settlement (configurable threshold), refund mismatch
-- [ ] `reconciliation_results` table; rules run after each state update
+- [x] Rule interface + decorator registry; rule modules auto-discovered
+- [x] Rules: missing ledger, ledger mismatch, settlement mismatch, duplicate capture,
+      missing settlement (configurable threshold), refund mismatch
+- [x] `reconciliation_results` (one row per transaction + anomaly, OPEN/RESOLVED);
+      overall state is DISCREPANCY iff a finding is open
+- [x] Grace periods measured from arrival time (no false alarms on late delivery);
+      missing-settlement deadline measured from capture time
+- [x] Scheduler worker re-reconciles unfinished transactions for time-based rules
+- [x] `audit_logs` (append-only, same DB transaction as the change): EVENT_RECEIVED,
+      DISCREPANCY_DETECTED, DISCREPANCY_RESOLVED
+- [x] JSON logs on stdout with service, worker_id, request_id, tenant/transaction/event ids
+- [x] `GET /reconciliation-results`, `GET /audit-logs`, findings on `GET /transactions/{id}`
 
 **Done when:** each rule has a unit test; mismatched transactions show results via API.
 
@@ -146,7 +154,7 @@ the investigation with no duplicate.
 
 - [ ] API-key auth → user, tenant, role (VIEWER / INVESTIGATOR / ADMIN)
 - [ ] `GET /investigations`, `GET /investigations/{id}`, approve, reject, retry
-- [ ] Tenant scoping on every endpoint; `audit_logs` for all required actions
+- [ ] Tenant scoping on every endpoint; extend `audit_logs` to user actions
 
 **Done when:** tenant A cannot see tenant B's data; roles are enforced server-side.
 
@@ -162,7 +170,7 @@ the investigation with no duplicate.
 
 ### Phase 10 — Observability, Load & Failure Injection (§19–§21)
 
-- [ ] `/metrics` with all required metrics; structured JSON logs with correlation ids
+- [ ] `/metrics` with all required metrics (JSON logs already in place since Phase 3)
 - [ ] Load generator (100k+ events), run off the VPS; `docs/load-test-report.md`
 
 ### Phase 11 — Kubernetes & CI (§22–§23)

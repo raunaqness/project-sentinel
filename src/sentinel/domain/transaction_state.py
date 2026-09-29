@@ -1,7 +1,8 @@
 """Materialized transaction state, computed from the full set of stored events.
 
-The state is always rebuilt from scratch from every event of the transaction,
-so the result depends only on *which* events exist, never on arrival order.
+The facts are always rebuilt from scratch from every event of the transaction,
+so they depend only on *which* events exist, never on arrival order. Whether the
+transaction is in DISCREPANCY is decided by the reconciliation rules, not here.
 """
 
 from dataclasses import dataclass
@@ -14,9 +15,9 @@ from sentinel.domain.events import EventType
 
 
 class TxnState(StrEnum):
-    PENDING = "PENDING"  # some expected events have not arrived yet
-    MATCHED = "MATCHED"  # gateway, ledger and settlement agree
-    DISCREPANCY = "DISCREPANCY"  # sources disagree
+    PENDING = "PENDING"  # expected events have not all arrived yet
+    MATCHED = "MATCHED"  # complete, and no reconciliation rule fires
+    DISCREPANCY = "DISCREPANCY"  # at least one reconciliation rule fires
     FAILED = "FAILED"  # payment failed and nothing downstream happened
 
 
@@ -33,13 +34,16 @@ class StoredEvent(Protocol):
     def currency(self) -> str | None: ...
     @property
     def event_timestamp(self) -> datetime: ...
+    @property
+    def received_at(self) -> datetime: ...
 
 
 @dataclass(frozen=True)
 class TransactionState:
     payment_amount: Decimal | None
     payment_status: str | None  # SUCCESS | FAILED
-    payment_captured_at: datetime | None
+    payment_captured_at: datetime | None  # business time, from the source system
+    payment_received_at: datetime | None  # when Sentinel stored the first capture
     capture_count: int
     ledger_amount: Decimal | None
     ledger_status: str | None  # POSTED
@@ -51,7 +55,7 @@ class TransactionState:
     event_count: int
     first_event_at: datetime
     last_event_at: datetime
-    state: TxnState
+    last_received_at: datetime
 
 
 def _latest(events: list[StoredEvent]) -> StoredEvent | None:
@@ -92,23 +96,12 @@ def compute_state(events: list[StoredEvent]) -> TransactionState:
     settlement_amount = settlement.amount if settlement else None
     currencies = {e.currency for e in events if e.currency is not None}
 
-    present = [a for a in (payment_amount, ledger_amount, settlement_amount) if a is not None]
-    if len(captures) > 1 or len(currencies) > 1 or len(set(present)) > 1:
-        state = TxnState.DISCREPANCY
-    elif payment_status == "FAILED" and ledger is None and settlement is None:
-        state = TxnState.FAILED
-    elif payment_status == "FAILED":
-        state = TxnState.DISCREPANCY  # downstream activity for a failed payment
-    elif first_capture and ledger and settlement:
-        state = TxnState.MATCHED
-    else:
-        state = TxnState.PENDING
-
     ordered = sorted(events, key=lambda e: (e.event_timestamp, e.event_id))
     return TransactionState(
         payment_amount=payment_amount,
         payment_status=payment_status,
         payment_captured_at=first_capture.event_timestamp if first_capture else None,
+        payment_received_at=first_capture.received_at if first_capture else None,
         capture_count=len(captures),
         ledger_amount=ledger_amount,
         ledger_status="POSTED" if ledger else None,
@@ -120,5 +113,22 @@ def compute_state(events: list[StoredEvent]) -> TransactionState:
         event_count=len(events),
         first_event_at=ordered[0].event_timestamp,
         last_event_at=ordered[-1].event_timestamp,
-        state=state,
+        last_received_at=max(e.received_at for e in events),
     )
+
+
+def overall_state(facts: TransactionState, has_open_findings: bool) -> TxnState:
+    if has_open_findings:
+        return TxnState.DISCREPANCY
+    downstream = facts.ledger_status is not None or facts.settlement_status is not None
+    if facts.payment_status == "FAILED" and not downstream:
+        return TxnState.FAILED
+    complete = facts.payment_status == "SUCCESS" and facts.ledger_status and facts.settlement_status
+    refunds_balanced = (facts.internal_refund_amount or Decimal(0)) == (
+        facts.gateway_refund_amount or Decimal(0)
+    )
+    # A refund awaiting gateway confirmation keeps the transaction PENDING, so the
+    # scheduler keeps re-checking it until the refund-mismatch grace period passes.
+    if complete and refunds_balanced:
+        return TxnState.MATCHED
+    return TxnState.PENDING

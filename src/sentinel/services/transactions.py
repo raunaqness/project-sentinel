@@ -1,19 +1,49 @@
-"""Rebuilds and reads materialized transaction state. Callers own the DB transaction."""
+"""Rebuilds transaction state, runs reconciliation and records the outcome.
 
-from dataclasses import asdict
+Callers own the DB transaction boundary. Everything here — state upsert, findings,
+audit rows — commits or rolls back together.
+"""
 
-from sqlalchemy import func, select
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sentinel.db.models import Event, Transaction
-from sentinel.domain.transaction_state import TransactionState, compute_state
+from sentinel.db.models import Event, ReconciliationResult, Transaction
+from sentinel.domain.transaction_state import TxnState, compute_state, overall_state
+from sentinel.reconciliation.engine import context_at, evaluate
+from sentinel.services import audit
+
+OPEN, RESOLVED = "OPEN", "RESOLVED"
 
 
-async def rebuild_state(
-    session: AsyncSession, tenant_id: str, transaction_id: str
-) -> TransactionState:
-    """Recompute the transaction's state from all of its events and upsert it."""
+@dataclass(frozen=True)
+class ReconcileOutcome:
+    state: TxnState
+    opened: list[str] = field(default_factory=list)
+    resolved: list[str] = field(default_factory=list)
+
+
+async def reconcile(
+    session: AsyncSession,
+    tenant_id: str,
+    transaction_id: str,
+    *,
+    actor: str,
+    now: datetime | None = None,
+) -> ReconcileOutcome:
+    """Recompute facts from all events, run every rule, and persist state + findings."""
+    now = now or datetime.now(UTC)
+
+    # Serialize work on one transaction (consumer vs scheduler) for this DB transaction.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+        {"key": f"{tenant_id}:{transaction_id}"},
+    )
+
     events = (
         await session.scalars(
             select(Event).where(
@@ -21,19 +51,96 @@ async def rebuild_state(
             )
         )
     ).all()
-    state = compute_state(list(events))
+    facts = compute_state(list(events))
+    findings = {f.anomaly_type: f for f in evaluate(facts, context_at(now))}
+    state = overall_state(facts, has_open_findings=bool(findings))
 
-    values = asdict(state) | {"tenant_id": tenant_id, "transaction_id": transaction_id}
-    stmt = insert(Transaction).values(**values)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[Transaction.tenant_id, Transaction.transaction_id],
-        set_={**asdict(state), "updated_at": func.now()},
+    columns = asdict(facts) | {"state": state}
+    await session.execute(
+        insert(Transaction)
+        .values(tenant_id=tenant_id, transaction_id=transaction_id, **columns)
+        .on_conflict_do_update(
+            index_elements=[Transaction.tenant_id, Transaction.transaction_id],
+            set_=columns | {"updated_at": func.now()},
+        )
     )
-    await session.execute(stmt)
-    return state
+
+    existing = {
+        row.anomaly_type: row
+        for row in await session.scalars(
+            select(ReconciliationResult).where(
+                ReconciliationResult.tenant_id == tenant_id,
+                ReconciliationResult.transaction_id == transaction_id,
+            )
+        )
+    }
+    outcome = ReconcileOutcome(state=state)
+
+    for anomaly_type, finding in findings.items():
+        row = existing.get(anomaly_type)
+        if row is None:
+            row = ReconciliationResult(
+                tenant_id=tenant_id,
+                transaction_id=transaction_id,
+                anomaly_type=anomaly_type,
+                first_detected_at=now,
+            )
+            session.add(row)
+        if row.status != OPEN:
+            outcome.opened.append(anomaly_type)
+            row.resolved_at = None
+        row.status = OPEN
+        row.severity = finding.severity
+        row.details = finding.details
+        row.last_evaluated_at = now
+
+    for anomaly_type, row in existing.items():
+        if anomaly_type not in findings and row.status == OPEN:
+            row.status, row.resolved_at, row.last_evaluated_at = RESOLVED, now, now
+            outcome.resolved.append(anomaly_type)
+
+    for anomaly_type in outcome.opened:
+        finding = findings[anomaly_type]
+        audit.record(
+            session,
+            tenant_id=tenant_id,
+            actor=actor,
+            action="DISCREPANCY_DETECTED",
+            entity_type="transaction",
+            entity_id=transaction_id,
+            details={"anomaly_type": anomaly_type, "severity": finding.severity, **finding.details},
+        )
+    for anomaly_type in outcome.resolved:
+        audit.record(
+            session,
+            tenant_id=tenant_id,
+            actor=actor,
+            action="DISCREPANCY_RESOLVED",
+            entity_type="transaction",
+            entity_id=transaction_id,
+            details={"anomaly_type": anomaly_type},
+        )
+    return outcome
 
 
 async def get_transaction(
     session: AsyncSession, tenant_id: str, transaction_id: str
 ) -> Transaction | None:
     return await session.get(Transaction, (tenant_id, transaction_id))
+
+
+async def list_findings(
+    session: AsyncSession,
+    tenant_id: str,
+    *,
+    transaction_id: str | None = None,
+    status: str | None = None,
+    limit: int = 200,
+) -> Sequence[ReconciliationResult]:
+    stmt = select(ReconciliationResult).where(ReconciliationResult.tenant_id == tenant_id)
+    if transaction_id is not None:
+        stmt = stmt.where(ReconciliationResult.transaction_id == transaction_id)
+    if status is not None:
+        stmt = stmt.where(ReconciliationResult.status == status)
+    stmt = stmt.order_by(ReconciliationResult.last_evaluated_at.desc()).limit(limit)
+    return (await session.scalars(stmt)).all()

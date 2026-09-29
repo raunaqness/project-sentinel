@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:19092"
     redis_url: RedisDsn = Field(default=RedisDsn("redis://localhost:6379/0"))
 
+    # Reconciliation timing
+    missing_settlement_seconds: int = 86_400  # settlement expected within 24h of capture
+    reconciliation_grace_seconds: int = 300  # tolerance for normal async arrival
+    scheduler_interval_seconds: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:

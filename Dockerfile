@@ -22,4 +22,5 @@ RUN useradd --system --no-create-home app
 USER app
 
 EXPOSE 8000
-CMD ["uvicorn", "sentinel.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Access logging is done by the app (JSON, with request_id), so uvicorn's is off.
+CMD ["uvicorn", "sentinel.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

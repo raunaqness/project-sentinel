@@ -8,6 +8,9 @@ services:
   event-consumer:
     deploy: { resources: { limits: { memory: 256M } } }
     memswap_limit: 256M
+  scheduler:
+    deploy: { resources: { limits: { memory: 128M } } }
+    memswap_limit: 128M
   postgres:
     deploy: { resources: { limits: { memory: 384M } } }
     memswap_limit: 384M

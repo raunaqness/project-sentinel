@@ -9,6 +9,7 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Numeric,
     Text,
@@ -64,6 +65,7 @@ class Transaction(Base):
     payment_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     payment_status: Mapped[str | None] = mapped_column(Text)
     payment_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payment_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     capture_count: Mapped[int]
     ledger_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     ledger_status: Mapped[str | None] = mapped_column(Text)
@@ -75,5 +77,53 @@ class Transaction(Base):
     event_count: Mapped[int]
     first_event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     state: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReconciliationResult(Base):
+    """Current outcome of one rule for one transaction (OPEN or RESOLVED)."""
+
+    __tablename__ = "reconciliation_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "transaction_id", "anomaly_type", name="uq_recon_txn_anomaly"
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "transaction_id"],
+            ["transactions.tenant_id", "transactions.transaction_id"],
+        ),
+        Index("ix_recon_tenant_status", "tenant_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Text)
+    transaction_id: Mapped[str] = mapped_column(Text)
+    anomaly_type: Mapped[str] = mapped_column(Text)
+    severity: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text)  # OPEN | RESOLVED
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    first_detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuditLog(Base):
+    """Append-only record of every business action, written in the same DB
+    transaction as the change it describes."""
+
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_tenant_created", "tenant_id", "created_at"),
+        Index("ix_audit_tenant_entity", "tenant_id", "entity_type", "entity_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Text, ForeignKey("tenants.id"))
+    actor: Mapped[str] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(Text)
+    entity_type: Mapped[str] = mapped_column(Text)
+    entity_id: Mapped[str] = mapped_column(Text)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
