@@ -32,9 +32,9 @@ and the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) fill
 ### Phase 0 — Foundations
 Spec: §22.1, §23 (partial), §27 (skeletons)
 
-- [ ] `README.md` skeleton linking `plan.md` and `ASSIGNMENT_ANSWERS.md`
-- [ ] `ASSIGNMENT_ANSWERS.md` skeleton — all questions listed, marked *pending*
-- [ ] `docs/decisions.md` with initial stack decisions
+- [x] `README.md` skeleton linking `plan.md` and `ASSIGNMENT_ANSWERS.md`
+- [x] `ASSIGNMENT_ANSWERS.md` skeleton — all questions listed, marked *pending*
+- [x] `docs/decisions.md` with initial stack decisions
 - [ ] `pyproject.toml`, `uv.lock`, ruff/mypy/pytest configuration
 - [ ] `src/sentinel/` package skeleton, `config.py`
 - [ ] `docker-compose.yml`: postgres (pgvector), redpanda, redis
