@@ -12,6 +12,9 @@
 #   d1   crash after LLM response (§9)       -> worker killed, resumes, 2 LLM requests
 #   d2   FAIL_AFTER_STEP env var (§21)       -> worker killed, resumes, 1 LLM request
 #   k    knowledge base (§10)                -> tenant isolation, filters, cited guidance
+#   ai   AI report (§11)                     -> grounded report, verification, model usage
+#   s    graceful shutdown (§22.3)           -> SIGTERM mid-analysis: step finishes, lease
+#                                              released, another start resumes (mock only)
 #   look audit trail, JSON logs and DB rows for the transactions of this run
 #
 # Needs: curl, jq, docker compose. Scenarios c and d1 need docker-compose.dev.yml in
@@ -165,6 +168,49 @@ scenario_k() {
   expect "report cites a knowledge chunk" "$(invs "$t" | jq '[.[0].report.facts[].source | select(startswith("chunk_"))] | length > 0')" true
 }
 
+psql_q() {
+  docker compose exec -T postgres psql -U "${POSTGRES_USER:-sentinel}" -d "${POSTGRES_DB:-sentinel}" -tA -c "$1"
+}
+
+scenario_ai() {
+  header "AI: investigation report with evidence grounding"
+  local t=txn_AI_$RUN
+  ev "$t" "evt_AI_p_$RUN" PAYMENT_GATEWAY PAYMENT_CAPTURED 10000 '{"gateway": "GATEWAY_ALPHA"}'
+  ev "$t" "evt_AI_l_$RUN" LEDGER LEDGER_POSTED 10000
+  ev "$t" "evt_AI_s_$RUN" BANK_SETTLEMENT SETTLEMENT_RECEIVED 9950
+  wait_for 90 sh -c "curl -s '$API/investigations?tenant_id=$TENANT&transaction_id=$t' | jq -e '.[] | select(.status==\"AWAITING_REVIEW\")'"
+  local id; id=$(invs "$t" | jq -r '.[0].id')
+  echo "  model call:"
+  psql_q "select output->'llm' from investigation_steps
+           where investigation_id='$id' and step='AI_ANALYSIS_COMPLETED'" | jq -c . | sed 's/^/    /'
+  echo "  verified report:"
+  invs "$t" | jq '.[0].report' | sed 's/^/    /'
+  expect "requires_human_review" "$(invs "$t" | jq '.[0].report.requires_human_review')" true
+  expect "every fact cites an event or chunk of this investigation" \
+    "$(invs "$t" | jq --arg r "$RUN" '[.[0].report.facts[].source | select(test("^(chunk_[0-9]+|evt_AI_.*_" + $r + ")$") | not)] | length')" 0
+}
+
+scenario_s() {
+  header "S: graceful shutdown — SIGTERM while the analysis step is running"
+  local t=txn_S_$RUN
+  ev "$t" "evt_S_p_$RUN" PAYMENT_GATEWAY PAYMENT_CAPTURED 10000 '{"mock_llm_delay_seconds": 8}'
+  ev "$t" "evt_S_l_$RUN" LEDGER LEDGER_POSTED 10000
+  ev "$t" "evt_S_s_$RUN" BANK_SETTLEMENT SETTLEMENT_RECEIVED 9950
+  wait_for 20 sh -c "curl -s '$API/investigations?tenant_id=$TENANT&transaction_id=$t' | jq -e '.[] | select(.current_step==\"KNOWLEDGE_RETRIEVED\" and .status==\"IN_PROGRESS\")'"
+  echo "  analysis in flight; sending SIGTERM (docker compose stop)..."
+  docker compose stop investigation-worker >/dev/null 2>&1
+  local id; id=$(invs "$t" | jq -r '.[0].id')
+  expect "in-flight step finished and checkpointed" "$(invs "$t" | jq -r '.[0].current_step')" AI_ANALYSIS_COMPLETED
+  expect "lease released on shutdown" "$(psql_q "select coalesce(lease_owner, 'released') from investigations where id='$id'")" released
+  docker compose logs --no-log-prefix investigation-worker | grep '^{' \
+    | jq -c --arg t "$t" 'select(.transaction_id==$t or .msg=="stopped") | {ts, msg, next_step}' | tail -4 | sed 's/^/    /'
+  echo "  starting the worker again..."
+  docker compose start investigation-worker >/dev/null 2>&1
+  wait_for 30 sh -c "curl -s '$API/investigations?tenant_id=$TENANT&transaction_id=$t' | jq -e '.[] | select(.status==\"AWAITING_REVIEW\")'"
+  expect "completed after restart" "$(invs "$t" | jq -r '.[0].status')" AWAITING_REVIEW
+  expect "analysis not repeated" "$(invs "$t" | jq -r '.[0].llm_requests')" 1
+}
+
 scenario_look() {
   header "Look inside: this run's transactions"
   docker compose exec -T postgres psql -U "${POSTGRES_USER:-sentinel}" -d "${POSTGRES_DB:-sentinel}" -c \
@@ -187,7 +233,7 @@ scenario_look() {
 curl -sf "$API/health" >/dev/null || { echo "API not reachable at $API — is the stack up (make up)?"; exit 1; }
 echo "API: $API   run id: $RUN"
 
-scenarios=("$@"); [ ${#scenarios[@]} -eq 0 ] && scenarios=(a b c d1 d2 k look)
+scenarios=("$@"); [ ${#scenarios[@]} -eq 0 ] && scenarios=(a b c d1 d2 k ai s look)
 for s in "${scenarios[@]}"; do "scenario_$s"; done
 
 echo

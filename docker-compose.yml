@@ -25,6 +25,8 @@ x-app: &app
     SENTINEL_EMBEDDER: ${SENTINEL_EMBEDDER:-fake}
     SENTINEL_EMBEDDING_MODEL: ${SENTINEL_EMBEDDING_MODEL:-openai/text-embedding-3-small}
     OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    SENTINEL_INVESTIGATOR: ${SENTINEL_INVESTIGATOR:-mock}
+    SENTINEL_LLM_MODEL: ${SENTINEL_LLM_MODEL:-openai/gpt-4o-mini}
   logging: *default-logging
 
 services:

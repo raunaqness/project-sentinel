@@ -157,15 +157,24 @@ the investigation with no duplicate.
 - [x] `GET /knowledge/search`; walkthrough scenario `k`
 
 **Done when:** retrieval returns relevant chunks and never another tenant's.
-**Open:** confirm OpenRouter embeddings endpoint once `openrouter.ai` is reachable.
+OpenRouter embeddings endpoint confirmed (`openai/text-embedding-3-small`, 1536 dims).
 
-### Phase 7 — AI Investigator (§11)
+### Phase 7 — AI Investigator (§11) ✅ (real-model run pending on the VPS)
 
-- [ ] OpenRouter client + `OpenRouterInvestigator`
-- [ ] Structured report schema (facts / hypotheses / recommendation) + safe parsing
-- [ ] Grounding check: every fact cites a real event or chunk
+- [x] `OpenRouterInvestigator` (OpenAI SDK → OpenRouter, default `openai/gpt-4o-mini`),
+      selected with `SENTINEL_INVESTIGATOR=openrouter|mock`; tests/CI use the mock
+- [x] Strict JSON-schema structured output, Pydantic validation, one repair attempt,
+      then the step fails into the workflow's bounded retries
+- [x] SDK-level bounded retries with backoff for 429 / 5xx / timeouts; token usage and
+      latency recorded on the analysis checkpoint
+- [x] Prompt: evidence authoritative, retrieved documents wrapped as untrusted data,
+      single-tenant context, FACT / HYPOTHESIS / RECOMMENDATION rules
+- [x] Grounding: facts citing unknown sources or unsupported numbers are demoted to
+      hypotheses and counted; `requires_human_review` forced true
+- [x] Graceful SIGTERM demonstrated (walkthrough `s`)
 
 **Done when:** a real mismatch produces a validated, evidence-backed report.
+**Open:** run `scripts/walkthrough.sh ai k b` on the VPS with `SENTINEL_INVESTIGATOR=openrouter`.
 
 ### Phase 8 — Review APIs, Multi-Tenancy, RBAC & Audit (§12, §13)
 

@@ -1,13 +1,11 @@
 import asyncio
 from typing import Any, cast
 
-import pytest
-
 from sentinel.ai.investigator import MockInvestigator
 from sentinel.ai.schemas import InvestigationInput
 from sentinel.workflow.failure_injection import VALID_POINTS
 from sentinel.workflow.states import STEPS, Step, remaining
-from sentinel.workflow.steps import StepContext, VerificationError, verify
+from sentinel.workflow.steps import StepContext, verify
 
 EVENTS = [
     {
@@ -59,7 +57,7 @@ def mock_report(anomaly: str = "SETTLEMENT_MISMATCH") -> dict[str, Any]:
         transaction={},
         events=EVENTS,
     )
-    return asyncio.run(MockInvestigator().analyze(data)).model_dump(mode="json")
+    return asyncio.run(MockInvestigator().analyze(data)).report.model_dump(mode="json")
 
 
 def test_mock_investigator_is_deterministic_and_cites_events() -> None:
@@ -72,6 +70,7 @@ def test_mock_investigator_is_deterministic_and_cites_events() -> None:
 
 def context(report: dict[str, Any]) -> StepContext:
     outputs = {
+        Step.TRANSACTION_DATA_COLLECTED: {"finding": {"difference": "50.00"}, "transaction": {}},
         Step.RELATED_EVENTS_COLLECTED: {"events": EVENTS},
         Step.KNOWLEDGE_RETRIEVED: {"chunks": []},
         Step.AI_ANALYSIS_COMPLETED: {"report": report},
@@ -79,12 +78,14 @@ def context(report: dict[str, Any]) -> StepContext:
     return cast(StepContext, type("Ctx", (), {"outputs": outputs})())
 
 
-def test_verify_accepts_cited_events() -> None:
-    assert asyncio.run(verify(context(mock_report())))["facts_checked"] == 1
+def test_verify_keeps_cited_facts() -> None:
+    out = asyncio.run(verify(context(mock_report())))
+    assert out["verification"]["facts_supported"] == 1
 
 
-def test_verify_rejects_unsupported_facts() -> None:
+def test_verify_demotes_unsupported_facts() -> None:
     report = mock_report()
     report["facts"].append({"claim": "Gateway charged 0.5% MDR", "source": "evt_made_up"})
-    with pytest.raises(VerificationError):
-        asyncio.run(verify(context(report)))
+    out = asyncio.run(verify(context(report)))
+    assert out["verification"]["facts_supported"] == 1
+    assert "Unverified: Gateway charged 0.5% MDR" in out["report"]["hypotheses"]

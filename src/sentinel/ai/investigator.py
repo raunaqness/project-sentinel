@@ -1,12 +1,14 @@
 """Investigator interface and the deterministic mock used by tests and demos."""
 
+import asyncio
 from typing import Any, Protocol
 
-from sentinel.ai.schemas import Fact, InvestigationInput, InvestigationReport
+from sentinel.ai.schemas import AnalysisResult, Fact, InvestigationInput, InvestigationReport
+from sentinel.config import get_settings
 
 
 class Investigator(Protocol):
-    async def analyze(self, data: InvestigationInput) -> InvestigationReport: ...
+    async def analyze(self, data: InvestigationInput) -> AnalysisResult: ...
 
 
 _TYPE_FOR_ANOMALY = {
@@ -56,7 +58,8 @@ _PLAYBOOK: dict[str, tuple[str, str, str]] = {
 class MockInvestigator:
     """Deterministic, offline investigator: same input, same report. No network."""
 
-    async def analyze(self, data: InvestigationInput) -> InvestigationReport:
+    async def analyze(self, data: InvestigationInput) -> AnalysisResult:
+        await _dev_delay(data)
         classification, hypothesis, action = _PLAYBOOK.get(
             data.anomaly_type,
             ("UNCLASSIFIED", "Cause unknown.", "Escalate to an investigator."),
@@ -69,7 +72,7 @@ class MockInvestigator:
         if data.knowledge:  # the mock does not read chunk text, so it cannot be steered by it
             top = data.knowledge[0]
             facts.append(Fact(claim=f"Relevant guidance: {top['title']}", source=top["chunk_id"]))
-        return InvestigationReport(
+        report = InvestigationReport(
             classification=classification,
             confidence=0.5,
             summary=f"{data.anomaly_type} detected for {data.transaction_id}: {data.finding}",
@@ -77,6 +80,19 @@ class MockInvestigator:
             hypotheses=[hypothesis],
             recommended_action=action,
         )
+        return AnalysisResult(report=report, meta={"model": "mock"})
+
+
+async def _dev_delay(data: InvestigationInput) -> None:
+    """Dev/test only: `metadata.mock_llm_delay_seconds` makes the mock slow, so a worker can
+    be stopped while an analysis is in flight (graceful-shutdown demo)."""
+    if not get_settings().allow_fault_injection:
+        return
+    for event in data.events:
+        delay = event.get("metadata", {}).get("mock_llm_delay_seconds")
+        if delay:
+            await asyncio.sleep(min(float(delay), 30))
+            return
 
 
 def _describe(event: dict[str, Any]) -> str:

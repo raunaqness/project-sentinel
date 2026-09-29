@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     )
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
+    # AI investigator
+    investigator: Literal["mock", "openrouter"] = "mock"  # tests/CI never call a paid model
+    llm_model: str = "openai/gpt-4o-mini"
+    llm_timeout_seconds: float = 60.0
+    llm_max_retries: int = 2  # SDK retries 429/5xx/timeouts with exponential backoff
+
     # Knowledge base and retrieval
     embedder: Literal["fake", "openrouter"] = "fake"  # fake = deterministic, offline
     embedding_model: str = "openai/text-embedding-3-small"  # 1536 dimensions

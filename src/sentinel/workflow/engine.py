@@ -291,7 +291,10 @@ async def _run_steps(
             output = await STEP_FUNCTIONS[step](ctx)
         if step is Step.AI_ANALYSIS_COMPLETED:
             crash_if(LLM_RESPONSE, fault)  # LLM answered, checkpoint not yet committed
-        report = outputs[Step.AI_ANALYSIS_COMPLETED]["report"] if step is Step.COMPLETED else None
+        report = None
+        if step is Step.COMPLETED:  # the verified (grounded) report, with its verification
+            verified = outputs[Step.RESULT_VERIFIED]
+            report = verified["report"] | {"verification": verified["verification"]}
         await _checkpoint(claim, worker_id, step, output, report)
         outputs[step] = output
         crash_if(step, fault)

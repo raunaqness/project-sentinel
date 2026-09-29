@@ -24,7 +24,7 @@ marked *Pending* has not been built yet.
 | [13](#q13) | §17 | LLM failure handling & dead-lettering | Pending (Phase 9) |
 | [14](#q14) | §18 | Prompt injection & source of truth | Pending (Phase 9) |
 | [15](#q15) | §20 | Load test results & first bottleneck | Pending (Phase 10) |
-| [16](#q16) | §22.3 | SIGTERM mid-investigation | Answered (demo pending, Phase 7) |
+| [16](#q16) | §22.3 | SIGTERM mid-investigation | Answered |
 | [17](#q17) | §25 | AI evaluation results | Pending (Phase 12) |
 | [18](#q18) | §27 | Component rationale; strong vs eventual consistency | Pending (Phase 12) |
 | [19](#q19) | §28 | Failure model per dependency | Pending (Phase 12) |
@@ -414,13 +414,17 @@ bottleneck you encountered.*
 **Spec §22.3:** *Handle SIGTERM correctly. Document exactly what happens if a
 worker is terminated halfway through an investigation.*
 
-**Status:** Answered (Phase 5) — live demonstration with the real LLM planned for Phase 7
+**Status:** Answered (Phase 5, demonstrated in Phase 7)
 
 **Answer:** On SIGTERM the worker stops claiming new jobs, lets the step in flight
 finish and commit its checkpoint, then releases its lease so another worker can resume
 the investigation immediately. Compose gives it 30 s (`stop_grace_period`). If it is
 killed before finishing, that is the crash case in [Q5](#q5): the lease expires and the
 investigation resumes from its last committed checkpoint.
+
+**Proof:** `scripts/walkthrough.sh s` sends SIGTERM (`docker compose stop`) while the
+analysis step is running: the step completes and is checkpointed, the lease is released,
+and a restarted worker resumes at `RESULT_VERIFIED` without repeating the analysis.
 
 **Details:** [`workers/investigation_worker.py`](src/sentinel/workers/investigation_worker.py),
 [`workflow/engine.py`](src/sentinel/workflow/engine.py) (`release`)

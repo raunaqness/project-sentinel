@@ -29,8 +29,8 @@ Under active development. Progress is tracked phase by phase in [plan.md](plan.m
 | 4 | Investigation creation (§7) | Done |
 | 5 | Investigation workflow & crash recovery (§8–9) | Done |
 | 6 | Knowledge base & retrieval (§10) | Done |
-| 7 | AI investigator (§11) | Next |
-| 8 | Review APIs, multi-tenancy, RBAC & audit (§12–13) | Not started |
+| 7 | AI investigator (§11) | Done (real-model check pending) |
+| 8 | Review APIs, multi-tenancy, RBAC & audit (§12–13) | Next |
 | 9 | Hardening (§14–18) | Not started |
 | 10 | Observability, load & failure injection (§19–21) | Not started |
 | 11 | Kubernetes & CI (§22–23) | Not started |
@@ -85,6 +85,8 @@ e.g. `scripts/walkthrough.sh b d1`), printing ✔/✘ for each expectation:
 | `d1` | Worker hard-killed after the LLM answered, before commit (§9) → resumes, finishes once |
 | `d2` | `FAIL_AFTER_STEP=RESULT_VERIFIED` on the worker (§21) → resumes, reuses the LLM result |
 | `k` | Knowledge base: tenant-isolated search, and an investigation citing retrieved guidance |
+| `ai` | Investigation report after evidence grounding, with the model call's tokens and latency |
+| `s` | SIGTERM while the analysis runs: step finishes, lease released, restart resumes (mock investigator) |
 | `look` | Audit trail, cross-service JSON logs and DB rows for the run |
 
 ## Running Tests

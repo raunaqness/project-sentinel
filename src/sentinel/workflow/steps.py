@@ -7,16 +7,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sentinel.ai.grounding import ground
 from sentinel.ai.investigator import Investigator
 from sentinel.ai.schemas import InvestigationInput, InvestigationReport
 from sentinel.db.models import Event, ReconciliationResult, Transaction
 from sentinel.retrieval.embeddings import Embedder
 from sentinel.retrieval.search import search
 from sentinel.workflow.states import Step
-
-
-class VerificationError(Exception):
-    pass
 
 
 @dataclass
@@ -115,19 +112,20 @@ async def analyze(ctx: StepContext) -> dict[str, Any]:
         knowledge=ctx.outputs[Step.KNOWLEDGE_RETRIEVED]["chunks"],
     )
     await ctx.before_llm_call()
-    report = await ctx.investigator.analyze(data)
-    return {"report": report.model_dump(mode="json")}
+    result = await ctx.investigator.analyze(data)
+    return {"report": result.report.model_dump(mode="json"), "llm": result.meta}
 
 
 async def verify(ctx: StepContext) -> dict[str, Any]:
-    """Every fact must cite evidence we actually hold."""
-    report = InvestigationReport.model_validate(ctx.outputs[Step.AI_ANALYSIS_COMPLETED]["report"])
-    known = {e["event_id"] for e in ctx.outputs[Step.RELATED_EVENTS_COLLECTED]["events"]}
-    known |= {c["chunk_id"] for c in ctx.outputs[Step.KNOWLEDGE_RETRIEVED]["chunks"]}
-    unsupported = [f.source for f in report.facts if f.source not in known]
-    if unsupported:
-        raise VerificationError(f"facts cite unknown sources: {unsupported}")
-    return {"verified": True, "facts_checked": len(report.facts)}
+    """Keep only facts that their cited evidence supports; demote the rest to hypotheses."""
+    collected = ctx.outputs[Step.TRANSACTION_DATA_COLLECTED]
+    report, stats = ground(
+        InvestigationReport.model_validate(ctx.outputs[Step.AI_ANALYSIS_COMPLETED]["report"]),
+        events=ctx.outputs[Step.RELATED_EVENTS_COLLECTED]["events"],
+        chunks=ctx.outputs[Step.KNOWLEDGE_RETRIEVED]["chunks"],
+        authoritative={"finding": collected["finding"], "transaction": collected["transaction"]},
+    )
+    return {"report": report.model_dump(mode="json"), "verification": stats}
 
 
 async def complete(ctx: StepContext) -> dict[str, Any]:

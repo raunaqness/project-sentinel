@@ -9,7 +9,8 @@ import asyncio
 import contextlib
 import logging
 
-from sentinel.ai.investigator import MockInvestigator
+from sentinel.ai.investigator import Investigator, MockInvestigator
+from sentinel.ai.openrouter_investigator import OpenRouterInvestigator
 from sentinel.config import get_settings
 from sentinel.db.session import get_engine
 from sentinel.observability.logging import configure_logging, log_context
@@ -20,13 +21,19 @@ from sentinel.workflow import engine
 log = logging.getLogger("sentinel.investigation_worker")
 
 
+def make_investigator() -> Investigator:
+    if get_settings().investigator == "openrouter":
+        return OpenRouterInvestigator.from_settings()
+    return MockInvestigator()
+
+
 async def run() -> None:
     stop = stop_on_signals()
     me = worker_id()
-    investigator = MockInvestigator()  # OpenRouter-backed investigator arrives in Phase 7
+    investigator = make_investigator()
     embedder = get_embedder()
     poll = get_settings().worker_poll_seconds
-    log.info("started")
+    log.info("started", extra={"investigator": type(investigator).__name__})
     try:
         while not stop.is_set():
             claim = await engine.claim_next(me)
