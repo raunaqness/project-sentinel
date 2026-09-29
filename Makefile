@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test test-integration check up down logs ps config walkthrough ingest-kb seed
+.PHONY: install lint format typecheck test test-integration check up down logs ps config walkthrough ingest-kb seed metrics
 
 install:        ## Install dependencies
 	uv sync
@@ -46,3 +46,6 @@ ingest-kb:      ## Re-index knowledge_base/ (only changed documents are re-embed
 seed:           ## Issue fresh API keys (one per role per tenant) into .api-keys.json
 	docker compose run --rm --no-deps -T api python -m sentinel.seed > .api-keys.json
 	@echo "API keys written to .api-keys.json (gitignored)"
+
+metrics:        ## Show business metrics from the API and every worker
+	scripts/metrics.sh

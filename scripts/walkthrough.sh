@@ -23,6 +23,8 @@
 #   f    LLM failures (§17)                  -> 429s retried with backoff; 500s exhaust
 #                                              attempts -> FAILED + dead letter -> retry
 #   pi   prompt injection (§18)              -> adversarial docs quarantined; state intact
+#   obs  observability (§19)                 -> every required metric exposed; request_id
+#                                              traced from the API into the consumer
 #   look audit trail, JSON logs and DB rows for the transactions of this run
 #
 # Needs: curl, jq, docker compose, and API keys in .api-keys.json (`make seed`).
@@ -333,6 +335,28 @@ scenario_pi() {
   expect "report still needs human review" "$(invs "$t" | jq '.[0].report.requires_human_review')" true
 }
 
+scenario_obs() {
+  header "OBS: Prometheus metrics from every service, request_id across services (spec §19)"
+  local all; all=$(scripts/metrics.sh --raw 2>/dev/null)
+  for m in events_received_total events_processed_total events_failed_total reconciliation_failures_total \
+           investigations_created_total investigations_completed_total investigations_failed_total \
+           investigation_latency_seconds llm_requests_total llm_failures_total queue_depth; do
+    expect "metric $m exposed" "$(grep -c "^# TYPE $m " <<<"$all" | awk '{print ($1>0)}')" 1
+  done
+  scripts/metrics.sh | grep -E '^(==|events_|investigations_c|queue_depth|llm_requests)' | sed 's/^/    /'
+  local rid="walkthrough-$RUN"
+  curl -s -o /dev/null -X POST "$API/events" -H "X-API-Key: $SERVICE_KEY" -H "X-Request-ID: $rid" \
+    -H 'content-type: application/json' -d "{\"event_id\":\"evt_OBS_$RUN\",\"tenant_id\":\"$TENANT\",
+    \"transaction_id\":\"txn_OBS_$RUN\",\"source\":\"LEDGER\",\"type\":\"LEDGER_POSTED\",\"amount\":1,
+    \"currency\":\"INR\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+  sleep 2
+  echo "  log lines carrying request_id=$rid:"
+  docker compose logs --no-log-prefix api event-consumer | grep -o '{.*' \
+    | jq -c --arg r "$rid" 'select(.request_id==$r) | {service, msg, event_id}' | sed 's/^/    /' || true
+  expect "request_id reached the consumer" "$(docker compose logs --no-log-prefix event-consumer | grep -o '{.*' \
+    | jq -c --arg r "$rid" 'select(.request_id==$r)' | wc -l | awk '{print ($1>0)}')" 1
+}
+
 scenario_look() {
   header "Look inside: this run's transactions"
   docker compose exec -T postgres psql -U "${POSTGRES_USER:-sentinel}" -d "${POSTGRES_DB:-sentinel}" -c \
@@ -355,7 +379,7 @@ scenario_look() {
 curl -sf "$API/health" >/dev/null || { echo "API not reachable at $API — is the stack up (make up)?"; exit 1; }
 echo "API: $API   run id: $RUN"
 
-scenarios=("$@"); [ ${#scenarios[@]} -eq 0 ] && scenarios=(a b c d1 d2 k ai s r t q m f pi look)
+scenarios=("$@"); [ ${#scenarios[@]} -eq 0 ] && scenarios=(a b c d1 d2 k ai s r t q m f pi obs look)
 for s in "${scenarios[@]}"; do "scenario_$s"; done
 
 echo

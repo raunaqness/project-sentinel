@@ -15,8 +15,9 @@ from sentinel.config import get_settings
 from sentinel.db.models import Transaction
 from sentinel.db.session import get_engine, get_sessionmaker
 from sentinel.domain.transaction_state import TxnState
+from sentinel.observability import metrics
 from sentinel.observability.logging import configure_logging, log_context
-from sentinel.services.transactions import reconcile
+from sentinel.services.transactions import reconcile, record_outcome_metrics
 from sentinel.workers.base import stop_on_signals, worker_id
 
 log = logging.getLogger("sentinel.scheduler")
@@ -42,6 +43,7 @@ async def sweep() -> int:
         with log_context(tenant_id=tenant_id, transaction_id=transaction_id):
             async with get_sessionmaker()() as session, session.begin():
                 outcome = await reconcile(session, tenant_id, transaction_id, actor=ACTOR, now=now)
+            record_outcome_metrics(outcome)
             if outcome.opened or outcome.resolved:
                 log.info(
                     "reconciliation changed",
@@ -75,6 +77,7 @@ async def run() -> None:
 
 def main() -> None:
     configure_logging("scheduler")
+    metrics.serve_worker_metrics()
     with log_context(worker_id=worker_id()):
         asyncio.run(run())
 

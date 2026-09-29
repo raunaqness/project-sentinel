@@ -28,6 +28,7 @@ from sentinel.ai.ratelimit import LLMRateLimiter
 from sentinel.config import get_settings
 from sentinel.db.models import Event, Investigation, InvestigationStep
 from sentinel.db.session import get_sessionmaker
+from sentinel.observability import metrics
 from sentinel.observability.logging import log_context
 from sentinel.retrieval.embeddings import Embedder
 from sentinel.services import audit, dead_letters
@@ -55,6 +56,14 @@ class Claim:
 
 class LeaseLostError(Exception):
     pass
+
+
+async def pending_count() -> int:
+    async with get_sessionmaker()() as session:
+        count = await session.scalar(
+            select(func.count()).where(Investigation.status.in_([Status.OPEN, Status.IN_PROGRESS]))
+        )
+    return int(count or 0)
 
 
 async def claim_next(worker_id: str) -> Claim | None:
@@ -190,13 +199,13 @@ async def _checkpoint(
             "last_error": None,
         }
     async with get_sessionmaker()() as session, session.begin():
-        owned = await session.scalar(
+        created_at = await session.scalar(
             update(Investigation)
             .where(_still_ours(claim, worker_id))
             .values(**values)
-            .returning(Investigation.id)
+            .returning(Investigation.created_at)
         )
-        if owned is None:
+        if created_at is None:
             raise LeaseLostError(str(claim.id))
         await session.execute(
             insert(InvestigationStep)
@@ -213,6 +222,9 @@ async def _checkpoint(
                 entity_id=str(claim.id),
                 details={"attempt": claim.attempt, "classification": report["classification"]},
             )
+    if step is Step.COMPLETED:  # committed: count it
+        metrics.INVESTIGATIONS_COMPLETED.inc()
+        metrics.INVESTIGATION_LATENCY.observe((datetime.now(UTC) - created_at).total_seconds())
 
 
 def _backoff_seconds(attempt: int) -> float:
@@ -273,7 +285,8 @@ async def _record_failure(claim: Claim, worker_id: str, error: Exception) -> Non
                 "errors": errors,
             },
         )
-        log.error("attempts exhausted; dead-lettered", extra={"attempts": claim.attempt})
+    metrics.INVESTIGATIONS_FAILED.inc()
+    log.error("attempts exhausted; dead-lettered", extra={"attempts": claim.attempt})
 
 
 async def release(claim: Claim, worker_id: str) -> None:
@@ -334,6 +347,7 @@ async def _run_steps(
     async def before_llm_call() -> dict[str, Any]:
         """Wait for rate-limit budget, count the request, then apply any simulated fault."""
         limits = await limiter.acquire()
+        metrics.LLM_REQUESTS.labels(model=get_settings().llm_model_label).inc()
         async with get_sessionmaker()() as s, s.begin():
             calls = await s.scalar(
                 update(Investigation)

@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     investigator: Literal["mock", "openrouter"] = "mock"  # tests/CI never call a paid model
     llm_model: str = "openai/gpt-4o-mini"
     llm_timeout_seconds: float = 60.0
+
+    @property
+    def llm_model_label(self) -> str:
+        return self.llm_model if self.investigator == "openrouter" else "mock"
+
     llm_max_retries: int = 2  # SDK retries 429/5xx/timeouts with exponential backoff
 
     # Knowledge base and retrieval

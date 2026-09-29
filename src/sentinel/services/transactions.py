@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sentinel.db.models import Event, ReconciliationResult, Transaction
 from sentinel.domain.transaction_state import TxnState, compute_state, overall_state
+from sentinel.observability import metrics
 from sentinel.reconciliation.engine import context_at, evaluate
 from sentinel.services import audit, investigations
 
@@ -26,6 +27,15 @@ class ReconcileOutcome:
     opened: list[str] = field(default_factory=list)
     resolved: list[str] = field(default_factory=list)
     investigations_opened: list[str] = field(default_factory=list)
+    investigation_priorities: list[str] = field(default_factory=list)
+
+
+def record_outcome_metrics(outcome: "ReconcileOutcome") -> None:
+    """Count findings and investigations — call only after the transaction committed."""
+    for anomaly_type in outcome.opened:
+        metrics.RECONCILIATION_FAILURES.labels(anomaly_type=anomaly_type).inc()
+    for priority in outcome.investigation_priorities:
+        metrics.INVESTIGATIONS_CREATED.labels(priority=priority).inc()
 
 
 async def reconcile(
@@ -130,9 +140,10 @@ async def reconcile(
     await session.flush()  # assigns ids to newly opened findings
     amount = facts.payment_amount or facts.ledger_amount or facts.settlement_amount
     for row in opened_rows:
-        investigation_id = await investigations.open_for_finding(session, row, amount, actor=actor)
-        if investigation_id is not None:
-            outcome.investigations_opened.append(str(investigation_id))
+        opened = await investigations.open_for_finding(session, row, amount, actor=actor)
+        if opened is not None:
+            outcome.investigations_opened.append(str(opened.id))
+            outcome.investigation_priorities.append(opened.priority)
     return outcome
 
 

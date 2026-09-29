@@ -12,6 +12,7 @@ from sentinel.api.auth import Ingestor, Reader
 from sentinel.api.deps import ProducerDep, SessionDep
 from sentinel.domain.events import EventIn
 from sentinel.messaging.kafka import EVENTS_TOPIC, event_key
+from sentinel.observability.logging import context_value
 from sentinel.services import ingestion
 
 router = APIRouter(tags=["events"])
@@ -49,6 +50,7 @@ async def ingest_event(event: EventIn, principal: Ingestor, producer: ProducerDe
             EVENTS_TOPIC,
             key=event_key(event.tenant_id, event.transaction_id),
             value=event.model_dump_json().encode(),
+            headers=[("request_id", (context_value("request_id") or "").encode())],
         )
     except KafkaError as exc:
         raise HTTPException(

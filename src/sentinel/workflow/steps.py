@@ -13,6 +13,7 @@ from sentinel.ai.investigator import Investigator
 from sentinel.ai.schemas import InvestigationInput, InvestigationReport
 from sentinel.config import get_settings
 from sentinel.db.models import Event, ReconciliationResult, Transaction
+from sentinel.observability import metrics
 from sentinel.retrieval.embeddings import Embedder
 from sentinel.retrieval.search import search
 from sentinel.workflow.states import Step
@@ -128,8 +129,12 @@ async def analyze(ctx: StepContext) -> dict[str, Any]:
         events=ctx.outputs[Step.RELATED_EVENTS_COLLECTED]["events"],
         knowledge=ctx.outputs[Step.KNOWLEDGE_RETRIEVED]["chunks"],
     )
-    limits = await ctx.before_llm_call()  # rate limit, request count, simulated faults
-    result = await ctx.investigator.analyze(data)
+    try:
+        limits = await ctx.before_llm_call()  # rate limit, request count, simulated faults
+        result = await ctx.investigator.analyze(data)
+    except Exception as error:
+        metrics.LLM_FAILURES.labels(error=type(error).__name__).inc()
+        raise
     return {"report": result.report.model_dump(mode="json"), "llm": result.meta | limits}
 
 

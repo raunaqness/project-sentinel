@@ -2,6 +2,7 @@
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
@@ -17,9 +18,15 @@ OPEN = "OPEN"
 AUTO_RESOLVED = "AUTO_RESOLVED"
 
 
+@dataclass(frozen=True)
+class Opened:
+    id: uuid.UUID
+    priority: str
+
+
 async def open_for_finding(
     session: AsyncSession, finding: ReconciliationResult, amount: Decimal | None, *, actor: str
-) -> uuid.UUID | None:
+) -> Opened | None:
     """Open an investigation unless an active one already exists for this anomaly.
 
     The partial unique index decides races: concurrent callers all attempt the
@@ -57,7 +64,7 @@ async def open_for_finding(
                 "priority": priority,
             },
         )
-    return investigation_id
+    return Opened(investigation_id, priority) if investigation_id is not None else None
 
 
 async def auto_resolve(

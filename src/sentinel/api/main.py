@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from sentinel import __version__
 from sentinel.api.routes import (
@@ -19,6 +20,7 @@ from sentinel.api.routes import (
 )
 from sentinel.db.session import get_engine
 from sentinel.messaging.kafka import make_producer
+from sentinel.observability import metrics
 from sentinel.observability.logging import configure_logging, log_context
 
 log = logging.getLogger("sentinel.api")
@@ -55,7 +57,12 @@ async def request_context(
     start = time.perf_counter()
     with log_context(request_id=request_id):
         response = await call_next(request)
-        if request.url.path != "/health":
+        if request.method == "POST" and request.url.path == "/events":
+            if response.status_code == 202:
+                metrics.EVENTS_RECEIVED.inc()
+            else:
+                metrics.EVENTS_FAILED.labels(reason=f"http_{response.status_code}").inc()
+        if request.url.path not in ("/health", "/metrics"):
             log.info(
                 "request",
                 extra={
@@ -67,6 +74,12 @@ async def request_context(
             )
     response.headers["x-request-id"] = request_id
     return response
+
+
+@app.get("/metrics", tags=["ops"], include_in_schema=False)
+async def prometheus_metrics() -> Response:
+    """Prometheus scrape endpoint for the API process (workers expose their own)."""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health", tags=["ops"])

@@ -25,6 +25,10 @@ _STANDARD_ATTRS = set(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) 
 }
 
 
+def context_value(key: str) -> str | None:
+    return _context.get().get(key)
+
+
 @contextmanager
 def log_context(**fields: str | None) -> Iterator[None]:
     merged = _context.get() | {k: v for k, v in fields.items() if v is not None}
@@ -61,6 +65,9 @@ def configure_logging(service: str) -> None:
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(get_settings().log_level)
+    # The OpenAI SDK's HTTP client logs every request at INFO; keep only problems.
+    for name in ("httpx", "httpx2", "openai"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     # Route uvicorn's own loggers through the JSON handler too.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         uvicorn_logger = logging.getLogger(name)

@@ -95,6 +95,7 @@ e.g. `scripts/walkthrough.sh b d1`), printing ✔/✘ for each expectation:
 | `m` | Malformed message written straight to Kafka → dead-lettered, inspectable |
 | `f` | LLM failures (§17): 429s retried with backoff; 500s exhaust attempts → `FAILED` + dead letter → human retry |
 | `pi` | Prompt injection (§18): adversarial documents quarantined; state and human review intact |
+| `obs` | All 11 required Prometheus metrics exposed; one `request_id` traced from the API into the consumer |
 | `look` | Audit trail, cross-service JSON logs and DB rows for the run |
 
 ## Running Tests

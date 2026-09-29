@@ -14,6 +14,7 @@ from sentinel.ai.openrouter_investigator import OpenRouterInvestigator
 from sentinel.ai.ratelimit import LLMRateLimiter
 from sentinel.config import get_settings
 from sentinel.db.session import get_engine
+from sentinel.observability import metrics
 from sentinel.observability.logging import configure_logging, log_context
 from sentinel.retrieval.embeddings import Embedder, get_embedder
 from sentinel.workers.base import stop_on_signals, worker_id
@@ -46,6 +47,15 @@ async def _slot(
         await engine.run(claim, me, investigator, embedder, limiter, stop)
 
 
+async def _sample_queue_depth(stop: asyncio.Event) -> None:
+    """Investigations waiting or running, for the queue_depth gauge."""
+    while not stop.is_set():
+        with contextlib.suppress(Exception):
+            metrics.QUEUE_DEPTH.labels(queue="investigations").set(await engine.pending_count())
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=5)
+
+
 async def run() -> None:
     stop = stop_on_signals()
     me = worker_id()
@@ -53,6 +63,7 @@ async def run() -> None:
     investigator = make_investigator()
     embedder = get_embedder()
     limiter = LLMRateLimiter.from_settings()
+    metrics.LLM_REQUESTS.labels(model=settings.llm_model_label)  # expose as 0 from the start
     log.info(
         "started",
         extra={
@@ -63,10 +74,11 @@ async def run() -> None:
     )
     try:
         await asyncio.gather(
+            _sample_queue_depth(stop),
             *(
                 _slot(me, investigator, embedder, limiter, stop)
                 for _ in range(settings.worker_concurrency)
-            )
+            ),
         )
     finally:
         await get_engine().dispose()
@@ -75,6 +87,7 @@ async def run() -> None:
 
 def main() -> None:
     configure_logging("investigation-worker")
+    metrics.serve_worker_metrics()
     with log_context(worker_id=worker_id()):
         asyncio.run(run())
 
