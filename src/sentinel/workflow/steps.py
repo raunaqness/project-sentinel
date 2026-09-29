@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sentinel.ai.investigator import Investigator
 from sentinel.ai.schemas import InvestigationInput, InvestigationReport
 from sentinel.db.models import Event, ReconciliationResult, Transaction
+from sentinel.retrieval.embeddings import Embedder
+from sentinel.retrieval.search import search
 from sentinel.workflow.states import Step
 
 
@@ -27,7 +29,21 @@ class StepContext:
     outputs: dict[str, dict[str, Any]]  # checkpoints of completed steps
     session: AsyncSession
     investigator: Investigator
+    embedder: Embedder
+    top_k: int
     before_llm_call: Callable[[], Awaitable[None]]
+
+
+# Retrieval queries phrased in the vocabulary of runbooks and agreements, per anomaly.
+_ANOMALY_QUERIES = {
+    "SETTLEMENT_MISMATCH": "settlement amount lower than captured amount fee merchant discount "
+    "rate agreement deducted at settlement",
+    "MISSING_LEDGER": "payment captured ledger entry missing posting job failed",
+    "LEDGER_MISMATCH": "ledger amount differs from captured amount adjustment entry",
+    "DUPLICATE_CAPTURE": "duplicate capture charged twice retry idempotency key refund",
+    "MISSING_SETTLEMENT": "settlement not received settlement file delay T+1 acquirer",
+    "REFUND_MISMATCH": "internal refund gateway refund not confirmed",
+}
 
 
 def _json(value: object) -> Any:
@@ -65,6 +81,7 @@ async def collect_events(ctx: StepContext) -> dict[str, Any]:
                 "amount": _json(e.amount),
                 "currency": e.currency,
                 "event_timestamp": e.event_timestamp.isoformat(),
+                "metadata": e.metadata_,
             }
             for e in rows
         ]
@@ -72,7 +89,19 @@ async def collect_events(ctx: StepContext) -> dict[str, Any]:
 
 
 async def retrieve_knowledge(ctx: StepContext) -> dict[str, Any]:
-    return {"chunks": []}  # knowledge base arrives in Phase 6
+    """Tenant-scoped hybrid search for guidance relevant to this anomaly."""
+    events = ctx.outputs[Step.RELATED_EVENTS_COLLECTED]["events"]
+    gateway = next((e["metadata"]["gateway"] for e in events if "gateway" in e["metadata"]), None)
+    query = _ANOMALY_QUERIES.get(ctx.anomaly_type, ctx.anomaly_type.replace("_", " ").lower())
+    chunks = await search(
+        ctx.session,
+        ctx.embedder,
+        tenant_id=ctx.tenant_id,
+        query=query,
+        k=ctx.top_k,
+        gateway=gateway,
+    )
+    return {"query": query, "gateway": gateway, "chunks": [c.as_dict() for c in chunks]}
 
 
 async def analyze(ctx: StepContext) -> dict[str, Any]:

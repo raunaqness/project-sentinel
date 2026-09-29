@@ -2,6 +2,9 @@ services:
   migrate:
     deploy: { resources: { limits: { memory: 256M } } }
     memswap_limit: 256M
+  kb-ingest:
+    deploy: { resources: { limits: { memory: 256M } } }
+    memswap_limit: 256M
   api:
     deploy: { resources: { limits: { memory: 256M } } }
     memswap_limit: 256M

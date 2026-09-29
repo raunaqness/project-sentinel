@@ -16,6 +16,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY README.md alembic.ini ./
 COPY src ./src
+COPY knowledge_base ./knowledge_base
 RUN uv sync --frozen --no-dev
 
 RUN useradd --system --no-create-home app

@@ -26,6 +26,7 @@ from sentinel.config import get_settings
 from sentinel.db.models import Event, Investigation, InvestigationStep
 from sentinel.db.session import get_sessionmaker
 from sentinel.observability.logging import log_context
+from sentinel.retrieval.embeddings import Embedder
 from sentinel.services import audit
 from sentinel.workflow.failure_injection import LLM_RESPONSE, VALID_POINTS, crash_if
 from sentinel.workflow.states import Status, Step, remaining
@@ -219,7 +220,11 @@ async def release(claim: Claim, worker_id: str) -> None:
 
 
 async def run(
-    claim: Claim, worker_id: str, investigator: Investigator, stop: asyncio.Event
+    claim: Claim,
+    worker_id: str,
+    investigator: Investigator,
+    embedder: Embedder,
+    stop: asyncio.Event,
 ) -> None:
     with log_context(
         investigation_id=str(claim.id),
@@ -228,7 +233,7 @@ async def run(
     ):
         heartbeat = asyncio.create_task(_heartbeat(claim, worker_id))
         try:
-            await _run_steps(claim, worker_id, investigator, stop)
+            await _run_steps(claim, worker_id, investigator, embedder, stop)
         except LeaseLostError:
             log.info("lease lost; another worker or a close took over")
         except Exception as error:
@@ -241,7 +246,11 @@ async def run(
 
 
 async def _run_steps(
-    claim: Claim, worker_id: str, investigator: Investigator, stop: asyncio.Event
+    claim: Claim,
+    worker_id: str,
+    investigator: Investigator,
+    embedder: Embedder,
+    stop: asyncio.Event,
 ) -> None:
     async with get_sessionmaker()() as session:
         rows = await session.scalars(
@@ -275,6 +284,8 @@ async def _run_steps(
                 outputs=outputs,
                 session=session,
                 investigator=investigator,
+                embedder=embedder,
+                top_k=get_settings().retrieval_top_k,
                 before_llm_call=count_llm_request,
             )
             output = await STEP_FUNCTIONS[step](ctx)

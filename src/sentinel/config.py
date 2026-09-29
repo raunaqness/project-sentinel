@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, RedisDsn
+from pydantic import Field, PostgresDsn, RedisDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,18 @@ class Settings(BaseSettings):
     lease_seconds: int = 60  # a claimed job is reclaimable this long after the last heartbeat
     max_attempts: int = 3
     worker_poll_seconds: float = 1.0
+
+    # OpenRouter (OpenAI-compatible API) for embeddings and, later, the LLM
+    openrouter_api_key: SecretStr | None = Field(
+        default=None, validation_alias="OPENROUTER_API_KEY"
+    )
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+
+    # Knowledge base and retrieval
+    embedder: Literal["fake", "openrouter"] = "fake"  # fake = deterministic, offline
+    embedding_model: str = "openai/text-embedding-3-small"  # 1536 dimensions
+    knowledge_base_dir: str = "knowledge_base"
+    retrieval_top_k: int = 5
 
     # Failure injection (spec §21). Name kept exactly as in the brief: FAIL_AFTER_STEP.
     # Applies to the first attempt of each investigation, so a restarted worker recovers.

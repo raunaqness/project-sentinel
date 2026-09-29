@@ -143,13 +143,21 @@ still shows one row. Unit test for validation, one integration test against comp
 **Done when:** killing the worker after the LLM step and restarting it completes
 the investigation with no duplicate.
 
-### Phase 6 — Knowledge Base & Retrieval (§10)
+### Phase 6 — Knowledge Base & Retrieval (§10) ✅
 
-- [ ] 15+ markdown documents with front-matter metadata, incl. adversarial ones
-- [ ] `documents` / `document_chunks` with pgvector; chunking + OpenRouter embeddings
-- [ ] Hybrid search (vector + full-text) with mandatory tenant filter
+- [x] 18 markdown documents with front-matter metadata: 12 global, 2 per merchant,
+      2 adversarial (instruction override, source-of-truth override)
+- [x] `documents` / `document_chunks` with pgvector (HNSW) and generated tsvector (GIN)
+- [x] Chunking (paragraph packing, title + heading prefix); idempotent `kb-ingest`
+      (re-embeds only changed documents or on embedder change)
+- [x] Embedder interface: OpenRouter (OpenAI-compatible) + deterministic FakeEmbedder
+- [x] Hybrid search (vector + full-text, reciprocal rank fusion); tenant filter is
+      mandatory in the only search function; document_type / gateway / as-of filters
+- [x] KNOWLEDGE_RETRIEVED step uses anomaly-specific queries; chunk ids are citable
+- [x] `GET /knowledge/search`; walkthrough scenario `k`
 
 **Done when:** retrieval returns relevant chunks and never another tenant's.
+**Open:** confirm OpenRouter embeddings endpoint once `openrouter.ai` is reachable.
 
 ### Phase 7 — AI Investigator (§11)
 

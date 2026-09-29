@@ -22,6 +22,9 @@ x-app: &app
     SENTINEL_LEASE_SECONDS: ${SENTINEL_LEASE_SECONDS:-60}
     SENTINEL_MAX_ATTEMPTS: ${SENTINEL_MAX_ATTEMPTS:-3}
     FAIL_AFTER_STEP: ${FAIL_AFTER_STEP:-}
+    SENTINEL_EMBEDDER: ${SENTINEL_EMBEDDER:-fake}
+    SENTINEL_EMBEDDING_MODEL: ${SENTINEL_EMBEDDING_MODEL:-openai/text-embedding-3-small}
+    OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
   logging: *default-logging
 
 services:
@@ -31,6 +34,13 @@ services:
     restart: "no"
     depends_on:
       postgres: { condition: service_healthy }
+
+  kb-ingest:
+    <<: *app
+    command: ["python", "-m", "sentinel.retrieval.indexer"]
+    restart: "no"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
 
   api:
     <<: *app
@@ -63,7 +73,7 @@ services:
     command: ["python", "-m", "sentinel.workers.investigation_worker"]
     stop_grace_period: 30s  # time to finish the current step on SIGTERM
     depends_on:
-      migrate: { condition: service_completed_successfully }
+      kb-ingest: { condition: service_completed_successfully }
 
   postgres:
     image: pgvector/pgvector:pg16

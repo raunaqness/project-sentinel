@@ -13,6 +13,7 @@ from sentinel.ai.investigator import MockInvestigator
 from sentinel.config import get_settings
 from sentinel.db.session import get_engine
 from sentinel.observability.logging import configure_logging, log_context
+from sentinel.retrieval.embeddings import get_embedder
 from sentinel.workers.base import stop_on_signals, worker_id
 from sentinel.workflow import engine
 
@@ -23,6 +24,7 @@ async def run() -> None:
     stop = stop_on_signals()
     me = worker_id()
     investigator = MockInvestigator()  # OpenRouter-backed investigator arrives in Phase 7
+    embedder = get_embedder()
     poll = get_settings().worker_poll_seconds
     log.info("started")
     try:
@@ -32,7 +34,7 @@ async def run() -> None:
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), timeout=poll)
                 continue
-            await engine.run(claim, me, investigator, stop)
+            await engine.run(claim, me, investigator, embedder, stop)
     finally:
         await get_engine().dispose()
         log.info("stopped")

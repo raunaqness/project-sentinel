@@ -11,3 +11,4 @@ eval/results
 loadtest-output
 *.md
 !README.md
+!knowledge_base/**

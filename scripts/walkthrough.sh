@@ -11,6 +11,7 @@
 #   c    missing ledger, then it arrives     -> opened by scheduler, then auto-resolved
 #   d1   crash after LLM response (§9)       -> worker killed, resumes, 2 LLM requests
 #   d2   FAIL_AFTER_STEP env var (§21)       -> worker killed, resumes, 1 LLM request
+#   k    knowledge base (§10)                -> tenant isolation, filters, cited guidance
 #   look audit trail, JSON logs and DB rows for the transactions of this run
 #
 # Needs: curl, jq, docker compose. Scenarios c and d1 need docker-compose.dev.yml in
@@ -116,7 +117,7 @@ crash_case() {  # crash_case <label> <txn> <metadata-json>
   expect "attempts" "$(invs "$t" | jq -r '.[0].attempts')" 2
   echo "  worker log for $t:"
   docker compose logs --no-log-prefix investigation-worker \
-    | jq -Rc --arg t "$t" 'fromjson? | select(.transaction_id==$t) | {ts, msg, attempt, fail_after_step, remaining}' \
+    | grep '^{' | jq -c --arg t "$t" 'select(.transaction_id==$t) | {ts, msg, attempt, fail_after_step, remaining}' \
     | sed 's/^/    /'
 }
 
@@ -137,6 +138,33 @@ scenario_d2() {
   echo "  worker recreated without FAIL_AFTER_STEP"
 }
 
+scenario_k() {
+  header "K: knowledge base — tenant-isolated hybrid retrieval"
+  local q="fee agreement merchant discount rate deducted at settlement"
+  for tenant in merchant_123 merchant_456; do
+    echo "  search as $tenant: \"$q\""
+    curl -s -G "$API/knowledge/search" --data-urlencode "tenant_id=$tenant" --data-urlencode "q=$q" \
+      | jq -r '.[] | "    \(.score)  [\(.scope)] \(.doc_key)"'
+  done
+  expect "merchant_123 sees own agreement" \
+    "$(curl -s -G "$API/knowledge/search" --data-urlencode tenant_id=merchant_123 --data-urlencode "q=$q" --data-urlencode k=20 | jq '[.[].doc_key] | index("merchant-123-fee-agreement") != null')" true
+  expect "merchant_456 never sees merchant_123 documents" \
+    "$(curl -s -G "$API/knowledge/search" --data-urlencode tenant_id=merchant_456 --data-urlencode "q=$q" --data-urlencode k=20 | jq '[.[] | select(.doc_key | startswith("merchant-123"))] | length')" 0
+  local t=txn_K_$RUN
+  ev "$t" "evt_K_p_$RUN" PAYMENT_GATEWAY PAYMENT_CAPTURED 10000 '{"gateway": "GATEWAY_ALPHA"}'
+  ev "$t" "evt_K_l_$RUN" LEDGER LEDGER_POSTED 10000
+  ev "$t" "evt_K_s_$RUN" BANK_SETTLEMENT SETTLEMENT_RECEIVED 9950
+  wait_for 20 sh -c "curl -s '$API/investigations?tenant_id=$TENANT&transaction_id=$t' | jq -e '.[] | select(.status==\"AWAITING_REVIEW\")'"
+  local id; id=$(invs "$t" | jq -r '.[0].id')
+  echo "  knowledge retrieved for the investigation of $t:"
+  curl -s "$API/investigations/$id?tenant_id=$TENANT" >/dev/null
+  docker compose exec -T postgres psql -U "${POSTGRES_USER:-sentinel}" -d "${POSTGRES_DB:-sentinel}" -tA -c \
+    "select c->>'chunk_id', c->>'scope', c->>'doc_key' from investigation_steps s,
+            jsonb_array_elements(s.output->'chunks') c
+      where s.investigation_id = '$id' and s.step = 'KNOWLEDGE_RETRIEVED'" | sed 's/^/    /'
+  expect "report cites a knowledge chunk" "$(invs "$t" | jq '[.[0].report.facts[].source | select(startswith("chunk_"))] | length > 0')" true
+}
+
 scenario_look() {
   header "Look inside: this run's transactions"
   docker compose exec -T postgres psql -U "${POSTGRES_USER:-sentinel}" -d "${POSTGRES_DB:-sentinel}" -c \
@@ -151,7 +179,7 @@ scenario_look() {
   fi
   echo "JSON logs across services for $b:"
   docker compose logs --no-log-prefix api event-consumer scheduler investigation-worker \
-    | jq -Rc --arg t "$b" 'fromjson? | select(.transaction_id==$t) | {ts, service, msg, state}' \
+    | grep '^{' | jq -c --arg t "$b" 'select(.transaction_id==$t) | {ts, service, msg, state}' \
     | sort | sed 's/^/  /'
 }
 
@@ -159,7 +187,7 @@ scenario_look() {
 curl -sf "$API/health" >/dev/null || { echo "API not reachable at $API — is the stack up (make up)?"; exit 1; }
 echo "API: $API   run id: $RUN"
 
-scenarios=("$@"); [ ${#scenarios[@]} -eq 0 ] && scenarios=(a b c d1 d2 look)
+scenarios=("$@"); [ ${#scenarios[@]} -eq 0 ] && scenarios=(a b c d1 d2 k look)
 for s in "${scenarios[@]}"; do "scenario_$s"; done
 
 echo

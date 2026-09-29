@@ -28,8 +28,8 @@ Under active development. Progress is tracked phase by phase in [plan.md](plan.m
 | 3 | Reconciliation engine (§6) | Done |
 | 4 | Investigation creation (§7) | Done |
 | 5 | Investigation workflow & crash recovery (§8–9) | Done |
-| 6 | Knowledge base & retrieval (§10) | Next |
-| 7 | AI investigator (§11) | Not started |
+| 6 | Knowledge base & retrieval (§10) | Done |
+| 7 | AI investigator (§11) | Next |
 | 8 | Review APIs, multi-tenancy, RBAC & audit (§12–13) | Not started |
 | 9 | Hardening (§14–18) | Not started |
 | 10 | Observability, load & failure injection (§19–21) | Not started |
@@ -84,6 +84,7 @@ e.g. `scripts/walkthrough.sh b d1`), printing ✔/✘ for each expectation:
 | `c` | Missing ledger opened by the scheduler, then resolved when the ledger arrives |
 | `d1` | Worker hard-killed after the LLM answered, before commit (§9) → resumes, finishes once |
 | `d2` | `FAIL_AFTER_STEP=RESULT_VERIFIED` on the worker (§21) → resumes, reuses the LLM result |
+| `k` | Knowledge base: tenant-isolated search, and an investigation citing retrieved guidance |
 | `look` | Audit trail, cross-service JSON logs and DB rows for the run |
 
 ## Running Tests

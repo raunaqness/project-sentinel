@@ -66,6 +66,9 @@ class MockInvestigator:
             for event in data.events
             if event["type"] == _TYPE_FOR_ANOMALY.get(data.anomaly_type)
         ]
+        if data.knowledge:  # the mock does not read chunk text, so it cannot be steered by it
+            top = data.knowledge[0]
+            facts.append(Fact(claim=f"Relevant guidance: {top['title']}", source=top["chunk_id"]))
         return InvestigationReport(
             classification=classification,
             confidence=0.5,
