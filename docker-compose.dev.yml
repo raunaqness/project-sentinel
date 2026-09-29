@@ -16,10 +16,13 @@ services:
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
   event-consumer:
-    environment: *fast-reconciliation
+    environment:
+      <<: *fast-reconciliation
+      SENTINEL_ALLOW_FAULT_INJECTION: "true"  # metadata.fail_after_commit (delivery test)
   scheduler:
     environment: *fast-reconciliation
   investigation-worker:
     environment:
       SENTINEL_LEASE_SECONDS: "5"  # a crashed worker's job is reclaimed within seconds
-      SENTINEL_ALLOW_FAULT_INJECTION: "true"  # per-event metadata.fail_after_step (tests)
+      SENTINEL_ALLOW_FAULT_INJECTION: "true"  # per-event fail_after_step / llm_fault (tests)
+      SENTINEL_RETRY_BACKOFF_SECONDS: "1"  # retries within seconds instead of minutes

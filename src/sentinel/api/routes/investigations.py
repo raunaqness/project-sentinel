@@ -35,6 +35,8 @@ class InvestigationOut(BaseModel):
     reviewed_by: uuid.UUID | None
     reviewed_at: datetime | None
     review_comment: str | None
+    next_attempt_at: datetime | None
+    errors: list[dict[str, Any]]
 
 
 class StepOut(BaseModel):

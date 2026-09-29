@@ -31,8 +31,8 @@ Under active development. Progress is tracked phase by phase in [plan.md](plan.m
 | 6 | Knowledge base & retrieval (§10) | Done |
 | 7 | AI investigator (§11) | Done |
 | 8 | Review APIs, multi-tenancy, RBAC & audit (§12–13) | Done |
-| 9 | Hardening (§14–18) | Next |
-| 10 | Observability, load & failure injection (§19–21) | Not started |
+| 9 | Hardening (§14–18) | Done |
+| 10 | Observability, load & failure injection (§19–21) | Next |
 | 11 | Kubernetes & CI (§22–23) | Not started |
 | 12 | Tests, evaluation, docs & demo (§24–32) | Not started |
 
@@ -91,6 +91,10 @@ e.g. `scripts/walkthrough.sh b d1`), printing ✔/✘ for each expectation:
 | `s` | SIGTERM while the analysis runs: step finishes, lease released, restart resumes (mock investigator) |
 | `r` | Human review: approve (reviewer recorded), conflicting decision → 409, retry re-runs the workflow |
 | `t` | Tenant isolation and RBAC: another tenant gets 404, roles enforced server-side |
+| `q` | Consumer killed after the DB commit, before acknowledging Kafka (§15): redelivery absorbed, one logical update |
+| `m` | Malformed message written straight to Kafka → dead-lettered, inspectable |
+| `f` | LLM failures (§17): 429s retried with backoff; 500s exhaust attempts → `FAILED` + dead letter → human retry |
+| `pi` | Prompt injection (§18): adversarial documents quarantined; state and human review intact |
 | `look` | Audit trail, cross-service JSON logs and DB rows for the run |
 
 ## Running Tests

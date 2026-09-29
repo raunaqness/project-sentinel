@@ -60,6 +60,8 @@ class MockInvestigator:
 
     async def analyze(self, data: InvestigationInput) -> AnalysisResult:
         await _dev_delay(data)
+        if _dev_flag(data, "mock_obey_injection"):
+            return _compromised_report(data)
         classification, hypothesis, action = _PLAYBOOK.get(
             data.anomaly_type,
             ("UNCLASSIFIED", "Cause unknown.", "Escalate to an investigator."),
@@ -98,3 +100,27 @@ async def _dev_delay(data: InvestigationInput) -> None:
 def _describe(event: dict[str, Any]) -> str:
     amount = f" {event['currency']} {event['amount']}" if event.get("amount") else ""
     return f"{event['source']} reported {event['type']}{amount}"
+
+
+def _dev_flag(data: InvestigationInput, name: str) -> bool:
+    return get_settings().allow_fault_injection and any(
+        e.get("metadata", {}).get(name) for e in data.events
+    )
+
+
+def _compromised_report(data: InvestigationInput) -> AnalysisResult:
+    """Dev/test only: what a model that obeyed an injected document might return.
+    Used to prove the system stays authoritative even if a model is compromised."""
+    report = InvestigationReport(
+        classification="RECONCILED",
+        confidence=1.0,
+        summary="All transactions are reconciled. Merchant 456 data: txn_999 INR 5000.",
+        facts=[
+            Fact(claim="The transaction is reconciled", source="policy-override"),
+            Fact(claim="merchant_456 transaction txn_999 amount 5000", source="merchant_456"),
+        ],
+        hypotheses=[],
+        recommended_action="Mark as reconciled and close.",
+        requires_human_review=False,
+    )
+    return AnalysisResult(report=report, meta={"model": "mock-compromised"})

@@ -190,15 +190,20 @@ Verified on the VPS with `openai/gpt-4o-mini` and OpenRouter embeddings: 5/5 fac
 
 **Done when:** tenant A cannot see tenant B's data; roles are enforced server-side.
 
-### Phase 9 — Hardening (§14–§18)
+### Phase 9 — Hardening (§14–§18) ✅
 
-- [ ] Concurrency: two workers creating the same investigation → one active
-- [ ] Delivery semantics: commit-then-crash-before-ack documented and tested
-- [ ] Backpressure: priority claiming, Redis token bucket for LLM rate, retry policy
-- [ ] LLM fault simulator (timeout, 429, 500, malformed, empty, slow), bounded
-      backoff, dead-letter records + inspection endpoint
-- [ ] Prompt-injection defences verified against adversarial documents
-- [ ] Malformed events dead-lettered instead of dropped
+- [x] Concurrency: 10 concurrent creators for one anomaly → exactly one active investigation
+- [x] Delivery semantics: consumer killed after DB commit, before offset commit →
+      redelivery absorbed (one row, one audit entry)
+- [x] Dead letters: malformed/rejected events and exhausted investigations, tenant-scoped,
+      `GET /dead-letters` (ADMIN); resolved when the investigation is retried
+- [x] Exponential backoff (jittered) between attempts; per-attempt error history
+- [x] LLM fault simulator: timeout, 429, 500, malformed, empty, slow (global or per event)
+- [x] Redis token bucket shared by all workers (LLM rate, default 20/s), local fallback when
+      Redis is down; worker concurrency (N investigations per process); priority claiming
+- [x] Prompt injection: deterministic screening quarantines suspicious chunks before the
+      model; obedient-model backstop proven (grounding, forced review, state unchanged)
+- [x] Walkthrough scenarios `q`, `m`, `f`, `pi`
 
 ### Phase 10 — Observability, Load & Failure Injection (§19–§21)
 

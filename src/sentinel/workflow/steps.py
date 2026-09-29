@@ -8,8 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sentinel.ai.grounding import ground
+from sentinel.ai.injection import injection_signals
 from sentinel.ai.investigator import Investigator
 from sentinel.ai.schemas import InvestigationInput, InvestigationReport
+from sentinel.config import get_settings
 from sentinel.db.models import Event, ReconciliationResult, Transaction
 from sentinel.retrieval.embeddings import Embedder
 from sentinel.retrieval.search import search
@@ -28,7 +30,7 @@ class StepContext:
     investigator: Investigator
     embedder: Embedder
     top_k: int
-    before_llm_call: Callable[[], Awaitable[None]]
+    before_llm_call: Callable[[], Awaitable[dict[str, Any]]]
 
 
 # Retrieval queries phrased in the vocabulary of runbooks and agreements, per anomaly.
@@ -86,10 +88,16 @@ async def collect_events(ctx: StepContext) -> dict[str, Any]:
 
 
 async def retrieve_knowledge(ctx: StepContext) -> dict[str, Any]:
-    """Tenant-scoped hybrid search for guidance relevant to this anomaly."""
+    """Tenant-scoped hybrid search for guidance relevant to this anomaly.
+
+    Chunks that look like prompt injection are quarantined: recorded here, never shown
+    to the model, never citable."""
     events = ctx.outputs[Step.RELATED_EVENTS_COLLECTED]["events"]
     gateway = next((e["metadata"]["gateway"] for e in events if "gateway" in e["metadata"]), None)
     query = _ANOMALY_QUERIES.get(ctx.anomaly_type, ctx.anomaly_type.replace("_", " ").lower())
+    if get_settings().allow_fault_injection:  # dev/test: steer retrieval toward given text
+        extra = next((e["metadata"].get("retrieval_extra_query") for e in events), None)
+        query = f"{query} {extra}" if extra else query
     chunks = await search(
         ctx.session,
         ctx.embedder,
@@ -98,7 +106,16 @@ async def retrieve_knowledge(ctx: StepContext) -> dict[str, Any]:
         k=ctx.top_k,
         gateway=gateway,
     )
-    return {"query": query, "gateway": gateway, "chunks": [c.as_dict() for c in chunks]}
+    kept, quarantined = [], []
+    for chunk in chunks:
+        signals = injection_signals(chunk.content)
+        if signals:
+            quarantined.append(
+                {"chunk_id": chunk.chunk_id, "doc_key": chunk.doc_key, "signals": signals}
+            )
+        else:
+            kept.append(chunk.as_dict())
+    return {"query": query, "gateway": gateway, "chunks": kept, "quarantined": quarantined}
 
 
 async def analyze(ctx: StepContext) -> dict[str, Any]:
@@ -111,9 +128,9 @@ async def analyze(ctx: StepContext) -> dict[str, Any]:
         events=ctx.outputs[Step.RELATED_EVENTS_COLLECTED]["events"],
         knowledge=ctx.outputs[Step.KNOWLEDGE_RETRIEVED]["chunks"],
     )
-    await ctx.before_llm_call()
+    limits = await ctx.before_llm_call()  # rate limit, request count, simulated faults
     result = await ctx.investigator.analyze(data)
-    return {"report": result.report.model_dump(mode="json"), "llm": result.meta}
+    return {"report": result.report.model_dump(mode="json"), "llm": result.meta | limits}
 
 
 async def verify(ctx: StepContext) -> dict[str, Any]:

@@ -30,8 +30,19 @@ class Settings(BaseSettings):
 
     # Investigation workflow
     lease_seconds: int = 60  # a claimed job is reclaimable this long after the last heartbeat
-    max_attempts: int = 3
+    max_attempts: int = 3  # then FAILED + dead letter
+    retry_backoff_seconds: float = 5.0  # delay before attempt n+1: base * 2^(n-1), jittered
+    retry_backoff_max_seconds: float = 300.0
     worker_poll_seconds: float = 1.0
+    worker_concurrency: int = 4  # investigations run in parallel per worker process
+
+    # LLM throughput (spec §16): shared token bucket in Redis
+    llm_rate_per_second: float = 20.0
+    llm_burst: int = 20
+    llm_fallback_fraction: float = 0.25  # per-process share of the rate when Redis is down
+    # Simulated provider failure on every LLM call (spec §17): timeout, http_429,
+    # http_500, malformed, empty, slow. Empty = off.
+    llm_fault: str | None = None
 
     # OpenRouter (OpenAI-compatible API) for embeddings and, later, the LLM
     openrouter_api_key: SecretStr | None = Field(

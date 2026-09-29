@@ -9,7 +9,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 
 from sentinel import __version__
-from sentinel.api.routes import audit, events, investigations, knowledge, transactions
+from sentinel.api.routes import (
+    audit,
+    dead_letters,
+    events,
+    investigations,
+    knowledge,
+    transactions,
+)
 from sentinel.db.session import get_engine
 from sentinel.messaging.kafka import make_producer
 from sentinel.observability.logging import configure_logging, log_context
@@ -36,6 +43,7 @@ app.include_router(transactions.router)
 app.include_router(investigations.router)
 app.include_router(knowledge.router)
 app.include_router(audit.router)
+app.include_router(dead_letters.router)
 
 
 @app.middleware("http")

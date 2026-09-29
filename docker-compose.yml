@@ -27,6 +27,10 @@ x-app: &app
     OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     SENTINEL_INVESTIGATOR: ${SENTINEL_INVESTIGATOR:-mock}
     SENTINEL_LLM_MODEL: ${SENTINEL_LLM_MODEL:-openai/gpt-4o-mini}
+    SENTINEL_LLM_RATE_PER_SECOND: ${SENTINEL_LLM_RATE_PER_SECOND:-20}
+    SENTINEL_LLM_FAULT: ${SENTINEL_LLM_FAULT:-}
+    SENTINEL_WORKER_CONCURRENCY: ${SENTINEL_WORKER_CONCURRENCY:-4}
+    SENTINEL_RETRY_BACKOFF_SECONDS: ${SENTINEL_RETRY_BACKOFF_SECONDS:-5}
   logging: *default-logging
 
 services:
@@ -76,6 +80,7 @@ services:
     stop_grace_period: 30s  # time to finish the current step on SIGTERM
     depends_on:
       kb-ingest: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }  # LLM rate limit (degrades gracefully if lost)
 
   postgres:
     image: pgvector/pgvector:pg16

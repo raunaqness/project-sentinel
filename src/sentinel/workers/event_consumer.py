@@ -6,17 +6,21 @@ causes redelivery, which the (tenant_id, event_id) unique key absorbs.
 """
 
 import asyncio
+import json
 import logging
+import os
+from typing import Any
 
 from aiokafka import ConsumerRecord
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
+from sentinel.config import get_settings
 from sentinel.db.session import get_engine, get_sessionmaker
 from sentinel.domain.events import EventIn
 from sentinel.messaging.kafka import EVENTS_TOPIC, make_consumer
 from sentinel.observability.logging import configure_logging, log_context
-from sentinel.services import audit
+from sentinel.services import audit, dead_letters
 from sentinel.services.ingestion import store_event
 from sentinel.services.transactions import reconcile
 from sentinel.workers.base import stop_on_signals, worker_id
@@ -30,9 +34,8 @@ ACTOR = "system:event-consumer"
 async def handle(record: ConsumerRecord[bytes, bytes]) -> None:
     try:
         event = EventIn.model_validate_json(record.value)
-    except ValidationError:
-        # Dead-lettering comes in the hardening phase; for now, log and skip.
-        log.warning("malformed message skipped", extra={"offset": record.offset})
+    except ValidationError as error:
+        await _dead_letter(record, f"validation failed: {error.errors(include_url=False)}")
         return
 
     with log_context(
@@ -59,9 +62,10 @@ async def handle(record: ConsumerRecord[bytes, bytes]) -> None:
                 outcome = await reconcile(
                     session, event.tenant_id, event.transaction_id, actor=ACTOR
                 )
-        except IntegrityError:
-            log.exception("event rejected by database constraints")
+        except IntegrityError as error:
+            await _dead_letter(record, f"rejected by database constraints: {error.orig}")
             return
+        _crash_after_commit_if_requested(event)
         log.info(
             "event stored",
             extra={
@@ -71,6 +75,37 @@ async def handle(record: ConsumerRecord[bytes, bytes]) -> None:
                 "investigations_opened": outcome.investigations_opened,
             },
         )
+
+
+async def _dead_letter(record: ConsumerRecord[bytes, bytes], error: str) -> None:
+    """Park an unprocessable message where an admin can inspect it, then move on
+    (its offset is committed, so it does not block the partition)."""
+    raw = (record.value or b"").decode(errors="replace")
+    try:
+        parsed: Any = json.loads(raw)
+    except json.JSONDecodeError:
+        parsed = None
+    payload = parsed if isinstance(parsed, dict) else {"raw": raw[:10_000]}
+    tenant = payload.get("tenant_id") if isinstance(payload.get("tenant_id"), str) else None
+    async with get_sessionmaker()() as session, session.begin():
+        dead_letters.record(
+            session,
+            kind=dead_letters.EVENT,
+            tenant_id=tenant,
+            reference=payload.get("event_id") if isinstance(payload.get("event_id"), str) else None,
+            error=error[:2000],
+            payload=payload | {"_offset": record.offset, "_partition": record.partition},
+        )
+    log.warning("message dead-lettered", extra={"offset": record.offset, "error": error[:200]})
+
+
+def _crash_after_commit_if_requested(event: EventIn) -> None:
+    """Dev/test only (spec §15): die after the DB commit but before the offset commit.
+    The broker redelivers the event and the (tenant_id, event_id) key absorbs it."""
+    if get_settings().allow_fault_injection and event.metadata.get("fail_after_commit"):
+        log.warning("injected crash after DB commit, before offset commit")
+        logging.shutdown()
+        os._exit(1)
 
 
 async def run() -> None:

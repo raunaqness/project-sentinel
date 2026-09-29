@@ -178,6 +178,8 @@ class Investigation(Base):
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     review_comment: Mapped[str | None] = mapped_column(Text)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    errors: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default="[]")
 
 
 class InvestigationStep(Base):
@@ -255,3 +257,20 @@ class User(Base):
     api_key_hash: Mapped[str] = mapped_column(Text, unique=True)
     disabled: Mapped[bool] = mapped_column(server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DeadLetter(Base):
+    """Work that could not be processed and needs a human: malformed events, and
+    investigations whose attempts are exhausted. Kept until resolved."""
+
+    __tablename__ = "dead_letters"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tenant_id: Mapped[str | None] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(Text)
+    reference: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[str | None] = mapped_column(Text)

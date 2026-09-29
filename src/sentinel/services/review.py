@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sentinel.api.auth import Principal
 from sentinel.db.models import Investigation, InvestigationStep
-from sentinel.services import audit
+from sentinel.services import audit, dead_letters
 from sentinel.workflow.states import Status
 
 
@@ -92,6 +92,7 @@ async def retry(
             lease_owner=None,
             lease_expires_at=None,
             last_error=None,
+            next_attempt_at=None,
             report=None,
             updated_at=func.now(),
         )
@@ -101,6 +102,9 @@ async def retry(
         return await _outcome_when_unmatched(session, principal, investigation_id)
     await session.execute(
         delete(InvestigationStep).where(InvestigationStep.investigation_id == investigation_id)
+    )
+    await dead_letters.resolve(
+        session, dead_letters.INVESTIGATION, str(investigation_id), by=principal.actor
     )
     audit.record(
         session,
