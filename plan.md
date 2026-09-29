@@ -10,6 +10,8 @@ and the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) fill
 - Every approved change is committed and pushed immediately, so no work is lost.
 - A phase is "done" only when its exit criteria pass and its answers are written.
 - Answers in `ASSIGNMENT_ANSWERS.md` describe what is built, never what is planned.
+- From Phase 1 on, every completed phase leaves `docker compose up` running the full
+  system built so far, verifiable on the VPS.
 
 ## Tech Stack
 
@@ -27,6 +29,29 @@ and the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) fill
 | Tooling | uv, ruff, mypy, pytest, testcontainers, Alembic | |
 | Delivery | Docker Compose, Kubernetes (kustomize), GitHub Actions | |
 
+## Deployment Target (VPS)
+
+The system is deployed with Docker Compose on a shared VPS after each phase.
+
+- **Host:** x86_64, 4 vCPU, 8 GB RAM — already ~5 GB used and swapping, so
+  Sentinel must stay within a hard memory budget.
+- **Ingress:** existing Cloudflare setup routes a subdomain to the API; only the
+  API is ever reachable from outside. Postgres, Redis and Redpanda are never
+  published (Docker bypasses `ufw`).
+- **LLM:** the deployed system uses OpenRouter; the mock is for tests/CI only.
+- **Load testing** runs off the VPS (laptop or CI), never on the shared host.
+
+| Service | Memory limit | Tuning |
+|---|---|---|
+| Redpanda | 1 GB | `--smp 1 --memory 768M --overprovisioned` |
+| PostgreSQL + pgvector | 384 MB | `shared_buffers=128MB`, `max_connections=50` |
+| Redis | 64 MB | `maxmemory 48mb` |
+| API | 256 MB | 1 uvicorn worker |
+| Event consumer | 256 MB | |
+| Investigation worker | 256 MB | |
+| Scheduler | 128 MB | |
+| **Total ceiling** | **~2.3 GB** | Typical idle ~1.5 GB |
+
 ## Phases
 
 ### Phase 0 — Foundations
@@ -35,10 +60,15 @@ Spec: §22.1, §23 (partial), §27 (skeletons)
 - [x] `README.md` skeleton linking `plan.md` and `ASSIGNMENT_ANSWERS.md`
 - [x] `ASSIGNMENT_ANSWERS.md` skeleton — all questions listed, marked *pending*
 - [x] `docs/decisions.md` with initial stack decisions
-- [ ] `pyproject.toml`, `uv.lock`, ruff/mypy/pytest configuration
-- [ ] `src/sentinel/` package skeleton, `config.py`
-- [ ] `docker-compose.yml`: postgres (pgvector), redpanda, redis
-- [ ] `.env.example`, `.gitignore`, `.dockerignore`, `Makefile`
+- [x] `pyproject.toml`, `uv.lock`, ruff/mypy/pytest configuration
+- [x] `src/sentinel/` package skeleton, `config.py`
+- [x] `.gitignore`
+- [ ] `docker-compose.yml` (secure base: no public ports except API on `127.0.0.1`):
+      postgres (pgvector), redpanda, redis — with healthchecks, `restart: unless-stopped`,
+      log rotation, named volumes
+- [ ] `docker-compose.dev.yml` (publishes infra ports for local development)
+- [ ] `docker-compose.vps.yml` (memory limits and tuning from the budget above)
+- [ ] `.env.example`, `.dockerignore`, `Makefile`
 - [ ] Minimal CI: lint + unit tests
 
 **Exit:** `docker compose up` brings infrastructure up healthy; CI green.
@@ -52,6 +82,10 @@ Spec: §4, §5, §14, §15
 - [ ] Event consumer: dedupe insert + state rebuild in one DB transaction; offset committed after DB commit
 - [ ] Order-independent state reducer (`domain/transaction_state.py`)
 - [ ] `GET /transactions/{id}`
+- [ ] Dockerfile; `api` + `event-consumer` services in compose
+- [ ] One-shot `migrate` service that runs before API and workers start
+- [ ] `make seed` (tenants, users, API keys)
+- [ ] VPS smoke test: deploy, send events, read back transaction state
 
 **Tests:** duplicate event ×10 → one logical result; settlement → ledger → payment → correct state; malformed event handling.
 **Answers:** Q1, Q2, Q10 (partial), Q11.
@@ -119,7 +153,7 @@ Spec: §16, §17, §19, §20
 - [ ] Priority-aware job claiming; Redis token bucket for LLM rate
 - [ ] Backpressure strategy (queue growth, consumer concurrency, throttling)
 - [ ] `/metrics` with all required metrics; structured JSON logs with correlation IDs
-- [ ] Load generator (100k+ events) + `docs/load-test-report.md`
+- [ ] Load generator (100k+ events) + `docs/load-test-report.md` (run off the VPS; report states where)
 
 **Tests:** repeated LLM failures → DLQ, inspectable, retryable.
 **Answers:** Q12, Q13, Q15.
@@ -127,8 +161,10 @@ Spec: §16, §17, §19, §20
 ### Phase 7 — Deployment & CI
 Spec: §22, §23
 
-- [ ] Production Dockerfile (multi-stage, non-root)
-- [ ] Full compose: api, event-consumer, investigation-worker, scheduler + infra
+- [ ] Production Dockerfile hardening (multi-stage, non-root)
+- [ ] `docs/deployment-vps.md`: fresh server → running system (memory, Cloudflare
+      routing, secrets, backups with `pg_dump`, updates, `/metrics` not public)
+- [ ] README "Deploy to a VPS" section linking the runbook
 - [ ] Kubernetes manifests: probes, requests/limits, config/secrets
 - [ ] CI: lint → unit → integration → container build
 
@@ -184,7 +220,9 @@ project-sentinel/
 ├── alembic.ini
 ├── Makefile                      # make up / test / lint / demo / load-test / eval
 ├── Dockerfile                    # One image; API or worker chosen by command
-├── docker-compose.yml            # api, workers, postgres(pgvector), redpanda, redis
+├── docker-compose.yml            # api, workers, postgres(pgvector), redpanda, redis (secure base)
+├── docker-compose.dev.yml        # local dev override: publishes infra ports
+├── docker-compose.vps.yml        # VPS override: memory limits + tuning
 ├── .env.example                  # OPENROUTER_API_KEY, model names, FAIL_AFTER_STEP, ...
 ├── .gitignore
 ├── .dockerignore
@@ -197,6 +235,7 @@ project-sentinel/
 │   ├── failure-model.md
 │   ├── security.md
 │   ├── decisions.md              # Why each technology was chosen (ADR style)
+│   ├── deployment-vps.md         # Step-by-step VPS deployment runbook
 │   ├── load-test-report.md
 │   └── eval-report.md
 │
