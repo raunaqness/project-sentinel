@@ -3,6 +3,7 @@
 import os
 import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -16,14 +17,17 @@ PRIVATE = {"merchant_123": "merchant-123-", "merchant_456": "merchant-456-"}
 
 
 @pytest.fixture
-def client() -> httpx.Client:
-    return httpx.Client(base_url=API_URL, timeout=10)
+def search(client_for: Callable[[str, str], httpx.Client]) -> Callable[..., list[dict[str, Any]]]:
+    """Search as the given tenant (its VIEWER key); the tenant comes from the key."""
+
+    def run(tenant: str, q: str, **params: Any) -> list[dict[str, Any]]:
+        return _search(client_for(tenant, "VIEWER"), q, **params)
+
+    return run
 
 
-def search(client: httpx.Client, tenant: str, q: str, **params: Any) -> list[dict[str, Any]]:
-    response = client.get(
-        "/knowledge/search", params={"tenant_id": tenant, "q": q, "k": 20, **params}
-    )
+def _search(client: httpx.Client, q: str, **params: Any) -> list[dict[str, Any]]:
+    response = client.get("/knowledge/search", params={"q": q, "k": 20, **params})
     assert response.status_code == 200
     rows: list[dict[str, Any]] = response.json()
     return rows
@@ -31,32 +35,26 @@ def search(client: httpx.Client, tenant: str, q: str, **params: Any) -> list[dic
 
 @pytest.mark.parametrize("tenant", ["merchant_123", "merchant_456"])
 def test_tenant_never_sees_another_tenants_private_documents(
-    client: httpx.Client, tenant: str
+    search: Callable[..., list[dict[str, Any]]], tenant: str
 ) -> None:
     others = [prefix for t, prefix in PRIVATE.items() if t != tenant]
     for q in ["merchant fee agreement discount rate", "incident report outage duplicate", "ledger"]:
-        for row in search(client, tenant, q):
+        for row in search(tenant, q):
             assert row["scope"] in ("global", tenant)
             assert not any(row["doc_key"].startswith(p) for p in others)
 
 
-def test_tenant_sees_its_own_private_documents(client: httpx.Client) -> None:
-    keys = [r["doc_key"] for r in search(client, "merchant_123", "fee agreement discount rate")]
+def test_tenant_sees_its_own_private_documents(search: Callable[..., list[dict[str, Any]]]) -> None:
+    keys = [r["doc_key"] for r in search("merchant_123", "fee agreement discount rate")]
     assert "merchant-123-fee-agreement" in keys
     assert "merchant-456-fee-agreement" not in keys
 
 
-def test_metadata_filters(client: httpx.Client) -> None:
-    rows = search(client, "merchant_123", "settlement", document_type="gateway_guide")
+def test_metadata_filters(search: Callable[..., list[dict[str, Any]]]) -> None:
+    rows = search("merchant_123", "settlement", document_type="gateway_guide")
     assert rows and {r["document_type"] for r in rows} == {"gateway_guide"}
-    beta_only = {
-        r["doc_key"] for r in search(client, "merchant_456", "settlement", gateway="GATEWAY_BETA")
-    }
+    beta_only = {r["doc_key"] for r in search("merchant_456", "settlement", gateway="GATEWAY_BETA")}
     assert "gateway-alpha-guide" not in beta_only
-
-
-def test_unknown_tenant_gets_only_global_documents(client: httpx.Client) -> None:
-    assert {r["scope"] for r in search(client, "merchant_999", "fee agreement")} <= {"global"}
 
 
 def test_investigation_uses_and_cites_knowledge(client: httpx.Client) -> None:
@@ -82,9 +80,7 @@ def test_investigation_uses_and_cites_knowledge(client: httpx.Client) -> None:
 
     deadline = time.monotonic() + 30
     while True:
-        rows = client.get(
-            "/investigations", params={"tenant_id": "merchant_123", "transaction_id": txn}
-        ).json()
+        rows = client.get("/investigations", params={"transaction_id": txn}).json()
         if rows and rows[0]["status"] == "AWAITING_REVIEW":
             break
         assert time.monotonic() < deadline, rows

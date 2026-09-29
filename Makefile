@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test test-integration check up down logs ps config walkthrough ingest-kb
+.PHONY: install lint format typecheck test test-integration check up down logs ps config walkthrough ingest-kb seed
 
 install:        ## Install dependencies
 	uv sync
@@ -17,7 +17,7 @@ typecheck:      ## Strict type check
 test:           ## Unit tests
 	uv run pytest -m "not integration"
 
-test-integration: ## Integration tests (needs `make up`)
+test-integration: ## Integration tests (needs `make up` and `make seed`)
 	uv run pytest -m integration
 
 check: lint typecheck test   ## Everything CI runs
@@ -42,3 +42,7 @@ walkthrough:    ## Send real events through the running stack and check the outc
 
 ingest-kb:      ## Re-index knowledge_base/ (only changed documents are re-embedded)
 	docker compose run --rm --build kb-ingest
+
+seed:           ## Issue fresh API keys (one per role per tenant) into .api-keys.json
+	docker compose run --rm --no-deps -T api python -m sentinel.seed > .api-keys.json
+	@echo "API keys written to .api-keys.json (gitignored)"

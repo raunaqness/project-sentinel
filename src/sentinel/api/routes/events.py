@@ -8,6 +8,7 @@ from aiokafka.errors import KafkaError
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from sentinel.api.auth import Ingestor, Reader
 from sentinel.api.deps import ProducerDep, SessionDep
 from sentinel.domain.events import EventIn
 from sentinel.messaging.kafka import EVENTS_TOPIC, event_key
@@ -37,10 +38,12 @@ class EventOut(BaseModel):
 
 
 @router.post("/events", status_code=status.HTTP_202_ACCEPTED)
-async def ingest_event(event: EventIn, session: SessionDep, producer: ProducerDep) -> EventAccepted:
-    """Validate and enqueue an event. Persistence happens asynchronously in the consumer."""
-    if not await ingestion.tenant_exists(session, event.tenant_id):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "unknown tenant_id")
+async def ingest_event(event: EventIn, principal: Ingestor, producer: ProducerDep) -> EventAccepted:
+    """Validate and enqueue an event. Persistence happens asynchronously in the consumer.
+
+    A key may only submit events for its own tenant."""
+    if event.tenant_id != principal.tenant_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "tenant_id does not match the API key")
     try:
         await producer.send_and_wait(
             EVENTS_TOPIC,
@@ -56,7 +59,7 @@ async def ingest_event(event: EventIn, session: SessionDep, producer: ProducerDe
 
 @router.get("/events")
 async def get_events(
-    session: SessionDep, tenant_id: str, transaction_id: str | None = None
+    session: SessionDep, principal: Reader, transaction_id: str | None = None
 ) -> list[EventOut]:
-    rows = await ingestion.list_events(session, tenant_id, transaction_id)
+    rows = await ingestion.list_events(session, principal.tenant_id, transaction_id)
     return [EventOut.model_validate(row) for row in rows]

@@ -30,18 +30,13 @@ def event(txn: str, source: str, type_: str, amount: int) -> dict[str, Any]:
 def wait_for_state(client: httpx.Client, txn: str, event_count: int) -> dict[str, Any]:
     deadline = time.monotonic() + 15
     while True:
-        response = client.get(f"/transactions/{txn}", params={"tenant_id": TENANT})
+        response = client.get(f"/transactions/{txn}")
         if response.status_code == 200 and response.json()["event_count"] >= event_count:
             body: dict[str, Any] = response.json()
             return body
         if time.monotonic() > deadline:
             pytest.fail(f"state for {txn} not ready: {response.status_code} {response.text}")
         time.sleep(0.25)
-
-
-@pytest.fixture
-def client() -> httpx.Client:
-    return httpx.Client(base_url=API_URL, timeout=10)
 
 
 def test_out_of_order_with_duplicate_reaches_correct_state(client: httpx.Client) -> None:
@@ -76,5 +71,5 @@ def test_healthy_transaction_matches(client: httpx.Client) -> None:
 
 
 def test_unknown_transaction_is_404(client: httpx.Client) -> None:
-    response = client.get("/transactions/txn_nope", params={"tenant_id": TENANT})
+    response = client.get("/transactions/txn_nope")
     assert response.status_code == 404

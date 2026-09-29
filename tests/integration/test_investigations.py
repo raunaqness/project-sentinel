@@ -30,7 +30,7 @@ def event(txn: str, source: str, type_: str, amount: int) -> dict[str, Any]:
 
 
 def investigations(client: httpx.Client, txn: str) -> list[dict[str, Any]]:
-    params = {"tenant_id": TENANT, "transaction_id": txn}
+    params = {"transaction_id": txn}
     rows: list[dict[str, Any]] = client.get("/investigations", params=params).json()
     return rows
 
@@ -43,12 +43,9 @@ def wait_until(check: Callable[[], bool], timeout: float = 15) -> None:
         time.sleep(0.25)
 
 
-@pytest.fixture
-def client() -> httpx.Client:
-    return httpx.Client(base_url=API_URL, timeout=10)
-
-
-def test_mismatch_opens_exactly_one_investigation(client: httpx.Client) -> None:
+def test_mismatch_opens_exactly_one_investigation(
+    client: httpx.Client, client_for: Callable[[str, str], httpx.Client]
+) -> None:
     txn = f"txn_{uuid.uuid4().hex[:8]}"
     settlement = event(txn, "BANK_SETTLEMENT", "SETTLEMENT_RECEIVED", 9950)
     for body in (
@@ -67,9 +64,9 @@ def test_mismatch_opens_exactly_one_investigation(client: httpx.Client) -> None:
     assert inv["closed_at"] is None  # still active (queued, running or awaiting review)
     assert inv["priority"] == "HIGH"  # MEDIUM severity, amount >= 10,000
 
-    detail = client.get(f"/investigations/{inv['id']}", params={"tenant_id": TENANT})
+    detail = client.get(f"/investigations/{inv['id']}")
     assert detail.status_code == 200
-    other_tenant = client.get(f"/investigations/{inv['id']}", params={"tenant_id": "merchant_456"})
+    other_tenant = client_for("merchant_456", "ADMIN").get(f"/investigations/{inv['id']}")
     assert other_tenant.status_code == 404
 
 
@@ -91,10 +88,7 @@ def test_investigation_auto_resolves_when_finding_resolves(client: httpx.Client)
     (inv,) = investigations(client, txn)
     assert inv["closed_at"] is not None
     actions = [
-        e["action"]
-        for e in client.get(
-            "/audit-logs", params={"tenant_id": TENANT, "entity_id": inv["id"]}
-        ).json()
+        e["action"] for e in client.get("/audit-logs", params={"entity_id": inv["id"]}).json()
     ]
     assert actions.count("INVESTIGATION_CREATED") == 1
     assert actions.count("INVESTIGATION_AUTO_RESOLVED") == 1

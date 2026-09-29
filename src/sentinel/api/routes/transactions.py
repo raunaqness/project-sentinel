@@ -7,6 +7,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict
 
+from sentinel.api.auth import Reader
 from sentinel.api.deps import SessionDep
 from sentinel.services.transactions import get_transaction, list_findings
 
@@ -54,8 +55,9 @@ class TransactionOut(BaseModel):
 
 @router.get("/transactions/{transaction_id}")
 async def read_transaction(
-    session: SessionDep, transaction_id: str, tenant_id: str
+    session: SessionDep, principal: Reader, transaction_id: str
 ) -> TransactionOut:
+    tenant_id = principal.tenant_id
     row = await get_transaction(session, tenant_id, transaction_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "transaction not found")
@@ -67,7 +69,7 @@ async def read_transaction(
 
 @router.get("/reconciliation-results")
 async def read_findings(
-    session: SessionDep, tenant_id: str, status: Literal["OPEN", "RESOLVED"] | None = None
+    session: SessionDep, principal: Reader, status: Literal["OPEN", "RESOLVED"] | None = None
 ) -> list[FindingOut]:
-    rows = await list_findings(session, tenant_id, status=status)
+    rows = await list_findings(session, principal.tenant_id, status=status)
     return [FindingOut.model_validate(r) for r in rows]

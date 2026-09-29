@@ -19,16 +19,11 @@ def wait_for_events(
     deadline = time.monotonic() + 15
     while True:
         rows: list[dict[str, Any]] = client.get(
-            "/events", params={"tenant_id": tenant_id, "transaction_id": transaction_id}
+            "/events", params={"transaction_id": transaction_id}
         ).json()
         if len(rows) >= count or time.monotonic() > deadline:
             return rows
         time.sleep(0.25)
-
-
-@pytest.fixture
-def client() -> httpx.Client:
-    return httpx.Client(base_url=API_URL, timeout=10)
 
 
 def test_event_is_stored_once_even_if_sent_twice(client: httpx.Client) -> None:
@@ -60,10 +55,11 @@ def test_malformed_event_rejected(client: httpx.Client) -> None:
     assert response.status_code == 422
 
 
-def test_unknown_tenant_rejected(client: httpx.Client) -> None:
+def test_event_for_another_tenant_is_forbidden(client: httpx.Client) -> None:
+    """The merchant_123 key cannot submit events on behalf of merchant_456."""
     event = {
         "event_id": "evt_x",
-        "tenant_id": "merchant_does_not_exist",
+        "tenant_id": "merchant_456",
         "transaction_id": "txn_x",
         "source": "LEDGER",
         "type": "LEDGER_POSTED",
@@ -71,4 +67,4 @@ def test_unknown_tenant_rejected(client: httpx.Client) -> None:
         "currency": "INR",
         "timestamp": "2026-09-29T10:30:00Z",
     }
-    assert client.post("/events", json=event).status_code == 422
+    assert client.post("/events", json=event).status_code == 403

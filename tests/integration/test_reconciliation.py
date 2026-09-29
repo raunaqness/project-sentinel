@@ -38,7 +38,7 @@ def wait_for(
 ) -> dict[str, Any]:
     deadline = time.monotonic() + 15
     while True:
-        response = client.get(f"/transactions/{txn}", params={"tenant_id": TENANT})
+        response = client.get(f"/transactions/{txn}")
         if response.status_code == 200 and ready(body := response.json()):
             return body  # type: ignore[no-any-return]
         if time.monotonic() > deadline:
@@ -48,11 +48,6 @@ def wait_for(
 
 def statuses(txn: dict[str, Any]) -> dict[str, str]:
     return {f["anomaly_type"]: f["status"] for f in txn["findings"]}
-
-
-@pytest.fixture
-def client() -> httpx.Client:
-    return httpx.Client(base_url=API_URL, timeout=10)
 
 
 def test_missing_ledger_opens_then_resolves(client: httpx.Client) -> None:
@@ -74,10 +69,7 @@ def test_missing_ledger_opens_then_resolves(client: httpx.Client) -> None:
     assert state["state"] == "MATCHED"
     assert statuses(state) == {"MISSING_LEDGER": "RESOLVED"}
 
-    actions = [
-        e["action"]
-        for e in client.get("/audit-logs", params={"tenant_id": TENANT, "entity_id": txn}).json()
-    ]
+    actions = [e["action"] for e in client.get("/audit-logs", params={"entity_id": txn}).json()]
     assert sorted(actions) == ["DISCREPANCY_DETECTED", "DISCREPANCY_RESOLVED"]
 
 
@@ -96,9 +88,7 @@ def test_settlement_mismatch_listed_as_open_finding(client: httpx.Client) -> Non
     (finding,) = [f for f in state["findings"] if f["anomaly_type"] == "SETTLEMENT_MISMATCH"]
     assert finding["details"]["difference"] == "50.00"
 
-    open_findings = client.get(
-        "/reconciliation-results", params={"tenant_id": TENANT, "status": "OPEN"}
-    ).json()
+    open_findings = client.get("/reconciliation-results", params={"status": "OPEN"}).json()
     assert any(f["transaction_id"] == txn for f in open_findings)
 
 
@@ -110,8 +100,6 @@ def test_every_stored_event_is_audited(client: httpx.Client) -> None:
     wait_for(client, txn, lambda t: t["event_count"] == 1)
     time.sleep(0.5)
 
-    entries = client.get(
-        "/audit-logs", params={"tenant_id": TENANT, "entity_id": body["event_id"]}
-    ).json()
+    entries = client.get("/audit-logs", params={"entity_id": body["event_id"]}).json()
     assert [e["action"] for e in entries] == ["EVENT_RECEIVED"]
     assert entries[0]["actor"] == "system:event-consumer"

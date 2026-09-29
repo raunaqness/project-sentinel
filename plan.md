@@ -176,11 +176,17 @@ OpenRouter embeddings endpoint confirmed (`openai/text-embedding-3-small`, 1536 
 **Done when:** a real mismatch produces a validated, evidence-backed report.
 Verified on the VPS with `openai/gpt-4o-mini` and OpenRouter embeddings: 5/5 facts grounded, ~2k tokens, 3–6 s per investigation.
 
-### Phase 8 — Review APIs, Multi-Tenancy, RBAC & Audit (§12, §13)
+### Phase 8 — Review APIs, Multi-Tenancy, RBAC & Audit (§12, §13) ✅
 
-- [ ] API-key auth → user, tenant, role (VIEWER / INVESTIGATOR / ADMIN)
-- [ ] `GET /investigations`, `GET /investigations/{id}`, approve, reject, retry
-- [ ] Tenant scoping on every endpoint; extend `audit_logs` to user actions
+- [x] API-key auth (`X-API-Key`, SHA-256 hashes only); `make seed` issues one key per
+      role per tenant into gitignored `.api-keys.json`
+- [x] Roles enforced server-side on every route: VIEWER (read), INVESTIGATOR (+review),
+      ADMIN (+audit, ingest), SERVICE (ingest only, for source systems)
+- [x] Tenant taken from the key on every endpoint; other tenants' resources → 404;
+      events for another tenant → 403
+- [x] Approve / reject / retry as conditional updates (concurrent decisions → one 409);
+      reviewer, time and comment recorded; user actions audited as `user:<name>`
+- [x] Walkthrough scenarios `r` (review) and `t` (tenant isolation, RBAC)
 
 **Done when:** tenant A cannot see tenant B's data; roles are enforced server-side.
 

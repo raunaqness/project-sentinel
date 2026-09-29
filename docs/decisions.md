@@ -16,6 +16,7 @@ what we rejected, and the consequences we accept.
 | [009](#adr-009) | Deterministic reconciliation; AI only interprets | Accepted |
 | [010](#adr-010) | `src/` layout with uv, ruff, mypy, pytest | Accepted |
 | [011](#adr-011) | Audit trail in Postgres; JSON logs on stdout | Accepted |
+| [012](#adr-012) | API keys with tenant-bound roles | Accepted |
 
 ---
 
@@ -205,4 +206,26 @@ memory-constrained host; audit via log files — not transactional, not tenant-s
 
 **Consequences:** `docker compose logs | jq` traces a transaction across services
 today; any aggregator can ingest the same JSON later without code changes.
+
+---
+
+<a id="adr-012"></a>
+## ADR-012 — API keys with tenant-bound roles
+
+**Context:** Spec §13 requires server-side authorization, at least two tenants and
+roles such as VIEWER, INVESTIGATOR and ADMIN, with tenant isolation on every resource.
+
+**Decision:** Each API key belongs to exactly one user, tenant and role; only its
+SHA-256 hash is stored. Every route declares a permission (`read`, `review`, `audit`,
+`ingest`) checked by a FastAPI dependency, and the tenant always comes from the key,
+never from request parameters. Another tenant's resources return 404 (not 403) so their
+existence is not revealed. A fourth role, SERVICE, lets source systems submit events
+without holding admin keys.
+
+**Alternatives:** JWT/OAuth with an identity provider — the production answer, but it
+adds an IdP to operate; per-request `tenant_id` parameters — trivially spoofable.
+
+**Consequences:** Isolation cannot be bypassed by editing a URL. Keys are rotated by
+re-running `make seed`. Production would swap key lookup for token validation behind the
+same `Principal` interface.
 

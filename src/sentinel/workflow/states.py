@@ -20,6 +20,8 @@ class Status(StrEnum):
     OPEN = "OPEN"  # queued, never claimed
     IN_PROGRESS = "IN_PROGRESS"  # claimed; reclaimable once its lease expires
     AWAITING_REVIEW = "AWAITING_REVIEW"  # report ready for a human
+    APPROVED = "APPROVED"  # human accepted the report (closed)
+    REJECTED = "REJECTED"  # human rejected the report (closed)
     FAILED = "FAILED"  # attempts exhausted
     AUTO_RESOLVED = "AUTO_RESOLVED"  # finding resolved before a human decided
 

@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
+from sentinel.api.auth import Reader
 from sentinel.api.deps import SessionDep
 from sentinel.retrieval.embeddings import get_embedder
 from sentinel.retrieval.search import search
@@ -14,7 +15,7 @@ router = APIRouter(tags=["knowledge"])
 @router.get("/knowledge/search")
 async def search_knowledge(
     session: SessionDep,
-    tenant_id: str,
+    principal: Reader,
     q: str,
     document_type: str | None = None,
     gateway: str | None = None,
@@ -23,7 +24,7 @@ async def search_knowledge(
     chunks = await search(
         session,
         get_embedder(),
-        tenant_id=tenant_id,
+        tenant_id=principal.tenant_id,
         query=q,
         k=k,
         document_type=document_type,

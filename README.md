@@ -30,8 +30,8 @@ Under active development. Progress is tracked phase by phase in [plan.md](plan.m
 | 5 | Investigation workflow & crash recovery (§8–9) | Done |
 | 6 | Knowledge base & retrieval (§10) | Done |
 | 7 | AI investigator (§11) | Done |
-| 8 | Review APIs, multi-tenancy, RBAC & audit (§12–13) | Next |
-| 9 | Hardening (§14–18) | Not started |
+| 8 | Review APIs, multi-tenancy, RBAC & audit (§12–13) | Done |
+| 9 | Hardening (§14–18) | Next |
 | 10 | Observability, load & failure injection (§19–21) | Not started |
 | 11 | Kubernetes & CI (§22–23) | Not started |
 | 12 | Tests, evaluation, docs & demo (§24–32) | Not started |
@@ -64,6 +64,7 @@ Rationale for each choice: [docs/decisions.md](docs/decisions.md).
 ```bash
 cp .env.example .env     # set POSTGRES_PASSWORD (letters/digits) in both places it appears
 make up                  # build, migrate, start everything; waits until healthy
+make seed                # issue API keys (one per role per tenant) into .api-keys.json
 curl -s localhost:8000/health
 scripts/walkthrough.sh   # send real events through the stack and check the outcomes
 ```
@@ -72,7 +73,8 @@ scripts/walkthrough.sh   # send real events through the stack and check the outc
 - **On a shared VPS:** use
   `COMPOSE_FILE=docker-compose.yml:docker-compose.vps.yml:docker-compose.dev.yml` for
   memory limits plus fast demo timings.
-- Swagger UI: `http://localhost:8000/docs`.
+- Swagger UI: `http://localhost:8000/docs` (use **Authorize** with a key from `.api-keys.json`).
+- Every endpoint except `/health` needs an `X-API-Key` header; the tenant comes from the key.
 
 `scripts/walkthrough.sh` runs these scenarios (all by default, or pick some,
 e.g. `scripts/walkthrough.sh b d1`), printing ✔/✘ for each expectation:
@@ -87,6 +89,8 @@ e.g. `scripts/walkthrough.sh b d1`), printing ✔/✘ for each expectation:
 | `k` | Knowledge base: tenant-isolated search, and an investigation citing retrieved guidance |
 | `ai` | Investigation report after evidence grounding, with the model call's tokens and latency |
 | `s` | SIGTERM while the analysis runs: step finishes, lease released, restart resumes (mock investigator) |
+| `r` | Human review: approve (reviewer recorded), conflicting decision → 409, retry re-runs the workflow |
+| `t` | Tenant isolation and RBAC: another tenant gets 404, roles enforced server-side |
 | `look` | Audit trail, cross-service JSON logs and DB rows for the run |
 
 ## Running Tests

@@ -57,30 +57,23 @@ def wait_for(fetch: Callable[[], Any], ready: Callable[[Any], bool], timeout: fl
         time.sleep(0.5)
 
 
-@pytest.fixture
-def client() -> httpx.Client:
-    return httpx.Client(base_url=API_URL, timeout=10)
-
-
 def run_to_review(client: httpx.Client, fault: str | None) -> dict[str, Any]:
     txn = f"txn_{uuid.uuid4().hex[:8]}"
     for body in mismatch_events(txn, fault):
         assert client.post("/events", json=body).status_code == 202
 
     def listing() -> list[dict[str, Any]]:
-        params = {"tenant_id": TENANT, "transaction_id": txn}
+        params = {"transaction_id": txn}
         rows: list[dict[str, Any]] = client.get("/investigations", params=params).json()
         return rows
 
     (inv,) = wait_for(listing, lambda rows: [r["status"] for r in rows] == ["AWAITING_REVIEW"])
-    detail: dict[str, Any] = client.get(
-        f"/investigations/{inv['id']}", params={"tenant_id": TENANT}
-    ).json()
+    detail: dict[str, Any] = client.get(f"/investigations/{inv['id']}").json()
     return detail
 
 
 def audit_actions(client: httpx.Client, investigation_id: str) -> list[str]:
-    params = {"tenant_id": TENANT, "entity_id": investigation_id}
+    params = {"entity_id": investigation_id}
     return sorted(e["action"] for e in client.get("/audit-logs", params=params).json())
 
 

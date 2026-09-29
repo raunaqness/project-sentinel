@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
 
+from sentinel.api.auth import Auditor
 from sentinel.api.deps import SessionDep
 from sentinel.services import audit
 
@@ -26,7 +27,7 @@ class AuditEntryOut(BaseModel):
 
 @router.get("/audit-logs")
 async def read_audit_logs(
-    session: SessionDep, tenant_id: str, entity_id: str | None = None
+    session: SessionDep, principal: Auditor, entity_id: str | None = None
 ) -> list[AuditEntryOut]:
-    rows = await audit.list_entries(session, tenant_id, entity_id)
+    rows = await audit.list_entries(session, principal.tenant_id, entity_id)
     return [AuditEntryOut.model_validate(r) for r in rows]
