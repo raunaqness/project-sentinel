@@ -14,7 +14,7 @@ marked *Pending* has not been built yet.
 | [3](#q3) | §6 | Rule engine extensibility | Answered |
 | [4](#q4) | §7 | One active investigation under concurrency | Answered (test pending, Phase 9) |
 | [5](#q5) | §8, §9 | Workflow state machine & crash recovery | Answered |
-| [6](#q6) | §10 | Tenant isolation in retrieval | Pending (Phase 6) |
+| [6](#q6) | §10 | Tenant isolation in retrieval | Answered |
 | [7](#q7) | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | Pending (Phase 7) |
 | [8](#q8) | §11.3 | Invalid / malformed model output | Pending (Phase 7) |
 | [9](#q9) | §13 | RBAC & audit enforcement | Pending (Phase 8) |
@@ -191,13 +191,29 @@ and `test_crash_after_verification_reuses_llm_result` hard-kill the real worker 
 retrieval, metadata filtering. Tenant isolation is mandatory. One merchant must
 never retrieve another merchant's private knowledge.*
 
-**Status:** Pending (Phase 6)
+**Status:** Answered (Phase 6)
 
-**Answer:** —
+**Answer:** Retrieval has exactly one entry point, `search(tenant_id=…)`, which refuses
+an empty tenant and adds `tenant_id = :tenant OR tenant_id IS NULL` to both the vector
+and the full-text query. Global documents have a NULL tenant; private ones carry their
+tenant's id. Filter fields (tenant, document type, gateway, effective date) are
+denormalized onto every chunk, so isolation never depends on a join that could be
+forgotten. The workflow passes the investigation's own tenant, so an investigation can
+never retrieve another merchant's private knowledge.
 
-**Proof:** —
+Retrieval itself: markdown documents with front-matter metadata are chunked by
+paragraph (with title and heading prefixes), embedded, and stored in pgvector (HNSW)
+alongside a generated `tsvector` (GIN). Queries run vector and full-text search and
+fuse the rankings with reciprocal rank fusion, with optional `document_type`,
+`gateway` and effective-date filters.
 
-**Details:** —
+**Proof:**
+- `tests/integration/test_retrieval.py` — each tenant × several queries never returns
+  another tenant's documents; an unknown tenant gets global documents only
+- `scripts/walkthrough.sh k`
+
+**Details:** [`retrieval/search.py`](src/sentinel/retrieval/search.py),
+[`0006_knowledge_base.py`](src/sentinel/db/migrations/versions/0006_knowledge_base.py)
 
 ---
 
