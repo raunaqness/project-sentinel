@@ -1,5 +1,6 @@
 """Event ingestion and inspection endpoints."""
 
+import asyncio
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -10,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from sentinel.api.auth import Ingestor, Reader
 from sentinel.api.deps import ProducerDep, SessionDep
+from sentinel.config import get_settings
 from sentinel.domain.events import EventIn
 from sentinel.messaging.kafka import EVENTS_TOPIC, event_key
 from sentinel.observability.logging import context_value
@@ -45,14 +47,21 @@ async def ingest_event(event: EventIn, principal: Ingestor, producer: ProducerDe
     A key may only submit events for its own tenant."""
     if event.tenant_id != principal.tenant_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "tenant_id does not match the API key")
+    # Bounded wait for the broker's acknowledgement: during a broker outage callers get a
+    # fast 503 and retry, instead of requests piling up inside the API. A message already
+    # buffered may still be delivered after a 503; the caller's retry is then absorbed as
+    # a duplicate by the (tenant_id, event_id) key.
     try:
-        await producer.send_and_wait(
-            EVENTS_TOPIC,
-            key=event_key(event.tenant_id, event.transaction_id),
-            value=event.model_dump_json().encode(),
-            headers=[("request_id", (context_value("request_id") or "").encode())],
+        await asyncio.wait_for(
+            producer.send_and_wait(
+                EVENTS_TOPIC,
+                key=event_key(event.tenant_id, event.transaction_id),
+                value=event.model_dump_json().encode(),
+                headers=[("request_id", (context_value("request_id") or "").encode())],
+            ),
+            timeout=get_settings().kafka_send_timeout_seconds,
         )
-    except KafkaError as exc:
+    except (KafkaError, TimeoutError) as exc:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, "event broker unavailable"
         ) from exc

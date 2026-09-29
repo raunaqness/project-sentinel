@@ -46,7 +46,7 @@ SDK-level retries are tested separately against simulated HTTP replies
 |---|---|
 | `docker compose stop redis` | Workers switch to a per-process LLM rate limit (`limiter: local-fallback` on the analysis checkpoint) and keep completing investigations |
 | `docker compose stop postgres` | See [`failure-model.md`](failure-model.md) |
-| `docker compose stop redpanda` | `POST /events` returns 503; nothing is accepted that could be lost |
+| `docker compose stop redpanda` | `POST /events` returns 503 within `SENTINEL_KAFKA_SEND_TIMEOUT_SECONDS` (5 s) and recovers as soon as the broker is back; nothing is acknowledged with 202 unless the broker has it |
 
 ## Prompt injection (§18)
 

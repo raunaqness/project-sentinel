@@ -21,6 +21,7 @@ class Settings(BaseSettings):
         default=PostgresDsn("postgresql+asyncpg://sentinel:sentinel@localhost:5432/sentinel"),
     )
     kafka_bootstrap_servers: str = "localhost:19092"
+    kafka_send_timeout_seconds: float = 5.0  # POST /events answers 503 after this
     redis_url: RedisDsn = Field(default=RedisDsn("redis://localhost:6379/0"))
 
     # Reconciliation timing
