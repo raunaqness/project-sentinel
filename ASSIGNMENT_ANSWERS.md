@@ -11,7 +11,7 @@ marked *Pending* has not been built yet.
 |---|---|---|---|
 | [1](#q1) | §5 | Durable idempotency & eventual consistency | Answered |
 | [2](#q2) | §4.1 | Delivery edge cases | Pending (Phases 1–2, 9) |
-| [3](#q3) | §6 | Rule engine extensibility | Pending (Phase 3) |
+| [3](#q3) | §6 | Rule engine extensibility | Answered |
 | [4](#q4) | §7 | One active investigation under concurrency | Pending (Phases 4, 9) |
 | [5](#q5) | §8, §9 | Workflow state machine & crash recovery | Pending (Phase 5) |
 | [6](#q6) | §10 | Tenant isolation in retrieval | Pending (Phase 6) |
@@ -97,13 +97,23 @@ Settlement Mismatch, Duplicate Capture, Missing Settlement, Refund Mismatch.
 Avoid one giant if/elif block. The rule system should make it easy to add new
 checks without rewriting unrelated logic.*
 
-**Status:** Pending (Phase 3)
+**Status:** Answered (Phase 3)
 
-**Answer:** —
+**Answer:** Each rule is a small class in its own module under
+`src/sentinel/reconciliation/rules/`, decorated with `@register`. The engine imports every
+module in that package automatically and runs all registered rules over the
+transaction's facts. Rules are pure functions of `(facts, context)` — no I/O, no
+knowledge of each other — so adding a check means adding one file and nothing else
+changes. `LEDGER_MISMATCH` was added exactly this way, beyond the five required rules.
+Rule outcomes are stored per `(tenant, transaction, anomaly)` as `OPEN`/`RESOLVED`, so a
+rule that stops firing resolves its own finding.
 
-**Proof:** —
+**Proof:**
+- `tests/unit/test_rules.py` — one test per rule, plus `test_all_rules_registered`
+- `tests/integration/test_reconciliation.py`
 
-**Details:** —
+**Details:** [`reconciliation/base.py`](src/sentinel/reconciliation/base.py),
+[`reconciliation/engine.py`](src/sentinel/reconciliation/engine.py)
 
 ---
 
