@@ -13,7 +13,7 @@ marked *Pending* has not been built yet.
 | [2](#q2) | §4.1 | Delivery edge cases | Pending (Phases 1–2, 9) |
 | [3](#q3) | §6 | Rule engine extensibility | Answered |
 | [4](#q4) | §7 | One active investigation under concurrency | Answered (test pending, Phase 9) |
-| [5](#q5) | §8, §9 | Workflow state machine & crash recovery | Pending (Phase 5) |
+| [5](#q5) | §8, §9 | Workflow state machine & crash recovery | Answered |
 | [6](#q6) | §10 | Tenant isolation in retrieval | Pending (Phase 6) |
 | [7](#q7) | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | Pending (Phase 7) |
 | [8](#q8) | §11.3 | Invalid / malformed model output | Pending (Phase 7) |
@@ -24,7 +24,7 @@ marked *Pending* has not been built yet.
 | [13](#q13) | §17 | LLM failure handling & dead-lettering | Pending (Phase 9) |
 | [14](#q14) | §18 | Prompt injection & source of truth | Pending (Phase 9) |
 | [15](#q15) | §20 | Load test results & first bottleneck | Pending (Phase 10) |
-| [16](#q16) | §22.3 | SIGTERM mid-investigation | Pending (Phase 5) |
+| [16](#q16) | §22.3 | SIGTERM mid-investigation | Answered (demo pending, Phase 7) |
 | [17](#q17) | §25 | AI evaluation results | Pending (Phase 12) |
 | [18](#q18) | §27 | Component rationale; strong vs eventual consistency | Pending (Phase 12) |
 | [19](#q19) | §28 | Failure model per dependency | Pending (Phase 12) |
@@ -157,13 +157,30 @@ report is committed. After restart, the job must recover without disappearing,
 corrupting state, creating duplicate investigations, or hanging permanently.
 This must be demonstrable.*
 
-**Status:** Pending (Phase 5)
+**Status:** Answered (Phase 5)
 
-**Answer:** —
+**Answer:** Investigations run through a database-backed state machine
+`STARTED → TRANSACTION_DATA_COLLECTED → RELATED_EVENTS_COLLECTED → KNOWLEDGE_RETRIEVED →
+AI_ANALYSIS_COMPLETED → RESULT_VERIFIED → COMPLETED`. Each step's output is committed to
+`investigation_steps` (unique per step) together with a lease check. Workers claim jobs
+with `FOR UPDATE SKIP LOCKED` and hold a lease renewed by heartbeat; a dead worker stops
+renewing, and once the lease expires any worker reclaims the job and resumes after the
+last checkpoint. Completed steps are never re-run.
 
-**Proof:** —
+**The §9 scenario:** if the process dies after the LLM answered but before that answer
+is committed, the answer is lost and the resumed run repeats the LLM call — one extra
+request, but safe. If it dies any time after the analysis checkpoint, the stored answer
+is reused. The report and `AWAITING_REVIEW` status are written in the same DB
+transaction as the final checkpoint, so the job cannot disappear, complete twice or
+leave half-written state; the lease guarantees it cannot hang, and attempts are
+bounded (`FAILED` after the maximum).
 
-**Details:** —
+**Proof:** `tests/integration/test_workflow.py` — `test_crash_after_llm_response_before_checkpoint`
+and `test_crash_after_verification_reuses_llm_result` hard-kill the real worker container
+(`os._exit`) and assert one completion, the resumed steps, and the LLM request count.
+
+**Details:** [ADR-006](docs/decisions.md#adr-006),
+[`workflow/engine.py`](src/sentinel/workflow/engine.py)
 
 ---
 
@@ -381,13 +398,16 @@ bottleneck you encountered.*
 **Spec §22.3:** *Handle SIGTERM correctly. Document exactly what happens if a
 worker is terminated halfway through an investigation.*
 
-**Status:** Pending (Phase 5)
+**Status:** Answered (Phase 5) — live demonstration with the real LLM planned for Phase 7
 
-**Answer:** —
+**Answer:** On SIGTERM the worker stops claiming new jobs, lets the step in flight
+finish and commit its checkpoint, then releases its lease so another worker can resume
+the investigation immediately. Compose gives it 30 s (`stop_grace_period`). If it is
+killed before finishing, that is the crash case in [Q5](#q5): the lease expires and the
+investigation resumes from its last committed checkpoint.
 
-**Proof:** —
-
-**Details:** —
+**Details:** [`workers/investigation_worker.py`](src/sentinel/workers/investigation_worker.py),
+[`workflow/engine.py`](src/sentinel/workflow/engine.py) (`release`)
 
 ---
 
