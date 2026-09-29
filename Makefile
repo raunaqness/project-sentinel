@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test check up down logs ps config
+.PHONY: install lint format typecheck test test-integration check up down logs ps config
 
 install:        ## Install dependencies
 	uv sync
@@ -17,10 +17,13 @@ typecheck:      ## Strict type check
 test:           ## Unit tests
 	uv run pytest -m "not integration"
 
+test-integration: ## Integration tests (needs `make up`)
+	uv run pytest -m integration
+
 check: lint typecheck test   ## Everything CI runs
 
 up:             ## Start the stack (file set chosen by COMPOSE_FILE in .env)
-	docker compose up -d --wait
+	docker compose up -d --build --wait
 
 down:
 	docker compose down

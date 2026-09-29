@@ -23,8 +23,8 @@ Under active development. Progress is tracked phase by phase in [plan.md](plan.m
 | Phase | Feature | Status |
 |---|---|---|
 | 0 | Foundations | Done |
-| 1 | Event ingestion (§4) | In progress |
-| 2 | Idempotency & transaction state (§5) | Not started |
+| 1 | Event ingestion (§4) | Done |
+| 2 | Idempotency & transaction state (§5) | Next |
 | 3 | Reconciliation engine (§6) | Not started |
 | 4 | Investigation creation (§7) | Not started |
 | 5 | Investigation workflow & crash recovery (§8–9) | Not started |

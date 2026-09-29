@@ -74,16 +74,16 @@ Spec: §22.1, §23 (partial), §27 (skeletons)
 - [x] `.env.example`, `.dockerignore`, `Makefile`
 - [x] Minimal CI: lint + unit tests (frozen until Phase 11)
 
-### Phase 1 — Event Ingestion (§4)
+### Phase 1 — Event Ingestion (§4) ✅
 
-- [ ] Event schema: enums for source/type, Pydantic `EventIn` validation
-- [ ] Migration `0001`: `tenants` (seeded: merchant_123, merchant_456), `events`
+- [x] Event schema: enums for source/type, Pydantic `EventIn` validation
+- [x] Migration `0001`: `tenants` (seeded: merchant_123, merchant_456), `events`
       with `UNIQUE (tenant_id, event_id)` and index on `(tenant_id, transaction_id)`
-- [ ] `POST /events` → 422 on malformed, else produce to `sentinel.events`
+- [x] `POST /events` → 422 on malformed, else produce to `sentinel.events`
       (key = `tenant_id:transaction_id`) → 202
-- [ ] Event consumer: insert with `ON CONFLICT DO NOTHING`, commit offset after DB commit
-- [ ] `GET /events?tenant_id=&transaction_id=`, `GET /health`
-- [ ] Dockerfile; compose services `migrate`, `api`, `event-consumer`
+- [x] Event consumer: insert with `ON CONFLICT DO NOTHING`, commit offset after DB commit
+- [x] `GET /events?tenant_id=&transaction_id=`, `GET /health`
+- [x] Dockerfile; compose services `migrate`, `api`, `event-consumer`
 
 **Done when:** `docker compose up` → POST an event → GET shows it; posting it twice
 still shows one row. Unit test for validation, one integration test against compose.

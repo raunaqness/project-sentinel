@@ -1,4 +1,13 @@
 services:
+  migrate:
+    deploy: { resources: { limits: { memory: 256M } } }
+    memswap_limit: 256M
+  api:
+    deploy: { resources: { limits: { memory: 256M } } }
+    memswap_limit: 256M
+  event-consumer:
+    deploy: { resources: { limits: { memory: 256M } } }
+    memswap_limit: 256M
   postgres:
     deploy: { resources: { limits: { memory: 384M } } }
     memswap_limit: 384M

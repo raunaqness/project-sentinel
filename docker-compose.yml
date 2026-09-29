@@ -6,7 +6,46 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+x-app: &app
+  build: .
+  image: sentinel:local
+  restart: unless-stopped
+  environment:
+    SENTINEL_ENVIRONMENT: ${SENTINEL_ENVIRONMENT:-production}
+    SENTINEL_LOG_LEVEL: ${SENTINEL_LOG_LEVEL:-INFO}
+    SENTINEL_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sentinel}
+    SENTINEL_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+    SENTINEL_REDIS_URL: redis://redis:6379/0
+  logging: *default-logging
+
 services:
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:${SENTINEL_API_PORT:-8000}:8000"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redpanda: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  event-consumer:
+    <<: *app
+    command: ["python", "-m", "sentinel.workers.event_consumer"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redpanda: { condition: service_healthy }
+
   postgres:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
