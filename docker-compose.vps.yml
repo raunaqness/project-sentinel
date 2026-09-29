@@ -1,0 +1,10 @@
+services:
+  postgres:
+    deploy: { resources: { limits: { memory: 384M } } }
+    memswap_limit: 384M
+  redpanda:
+    deploy: { resources: { limits: { memory: 1G } } }
+    memswap_limit: 1G
+  redis:
+    deploy: { resources: { limits: { memory: 64M } } }
+    memswap_limit: 64M
