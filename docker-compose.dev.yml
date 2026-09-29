@@ -19,3 +19,7 @@ services:
     environment: *fast-reconciliation
   scheduler:
     environment: *fast-reconciliation
+  investigation-worker:
+    environment:
+      SENTINEL_LEASE_SECONDS: "5"  # a crashed worker's job is reclaimed within seconds
+      SENTINEL_ALLOW_FAULT_INJECTION: "true"  # per-event metadata.fail_after_step (tests)

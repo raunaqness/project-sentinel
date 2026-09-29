@@ -4,6 +4,7 @@ import asyncio
 import os
 import signal
 import socket
+import uuid
 
 
 def stop_on_signals() -> asyncio.Event:
@@ -15,5 +16,10 @@ def stop_on_signals() -> asyncio.Event:
     return stop
 
 
+_INSTANCE = uuid.uuid4().hex[:6]
+
+
 def worker_id() -> str:
-    return f"{socket.gethostname()}:{os.getpid()}"
+    """Unique per process start. A restarted container reuses hostname and PID 1, and
+    must not be mistaken for its dead predecessor when leases are checked."""
+    return f"{socket.gethostname()}:{os.getpid()}:{_INSTANCE}"

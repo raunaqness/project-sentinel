@@ -54,7 +54,7 @@ The system is deployed with Docker Compose on a shared VPS after each phase.
 | Redis | 64 MB | `maxmemory 48mb` |
 | API | 256 MB | 1 uvicorn worker |
 | Event consumer | 256 MB | |
-| Investigation worker | 256 MB | |
+| Investigation worker | 256 MB | Added in Phase 5 |
 | Scheduler | 128 MB | Added in Phase 3 |
 | **Total ceiling** | **~2.3 GB** | Typical idle ~1.5 GB |
 
@@ -126,13 +126,19 @@ still shows one row. Unit test for validation, one integration test against comp
 
 **Done when:** a mismatch opens exactly one investigation, visible via API.
 
-### Phase 5 — Investigation Workflow & Crash Recovery (§8, §9)
+### Phase 5 — Investigation Workflow & Crash Recovery (§8, §9) ✅
 
-- [ ] `investigation_steps` table; state machine STARTED → … → COMPLETED
-- [ ] Investigation worker: claims jobs, checkpoints after each step
-- [ ] Mock investigator behind the `Investigator` interface
-- [ ] Lease expiry + reclaim so a killed worker's job resumes
-- [ ] `FAIL_AFTER_STEP` failure injection; SIGTERM handling
+- [x] `investigation_steps` checkpoints (one per step, unique); STARTED → … → COMPLETED
+- [x] Investigation worker: priority-ordered claim with `FOR UPDATE SKIP LOCKED`,
+      lease + heartbeat, lease check on every checkpoint
+- [x] Crashed worker's job is reclaimed after lease expiry and resumes from its
+      last checkpoint; max attempts → FAILED
+- [x] Report stored atomically with the COMPLETED checkpoint → AWAITING_REVIEW
+- [x] `Investigator` interface + deterministic `MockInvestigator`; verification step
+      rejects facts citing unknown sources
+- [x] `FAIL_AFTER_STEP` (incl. `LLM_RESPONSE`) + dev-only per-event fault injection;
+      SIGTERM finishes the current step and releases the lease
+- [x] Audit: WORKFLOW_STARTED/RESUMED, INVESTIGATION_COMPLETED/FAILED
 
 **Done when:** killing the worker after the LLM step and restarting it completes
 the investigation with no duplicate.

@@ -9,7 +9,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sentinel.db.models import Investigation, ReconciliationResult
+from sentinel.db.models import Investigation, InvestigationStep, ReconciliationResult
 from sentinel.domain.priority import score
 from sentinel.services import audit
 
@@ -69,7 +69,10 @@ async def auto_resolve(
     actor: str,
     now: datetime,
 ) -> list[uuid.UUID]:
-    """Close not-yet-started investigations whose finding resolved on its own."""
+    """Close active investigations whose finding resolved on its own.
+
+    An in-flight worker notices at its next checkpoint (lease check fails) and stops.
+    """
     closed = (
         await session.scalars(
             update(Investigation)
@@ -77,10 +80,15 @@ async def auto_resolve(
                 Investigation.tenant_id == tenant_id,
                 Investigation.transaction_id == transaction_id,
                 Investigation.anomaly_type == anomaly_type,
-                Investigation.status == OPEN,
                 Investigation.closed_at.is_(None),
             )
-            .values(status=AUTO_RESOLVED, closed_at=now, updated_at=func.now())
+            .values(
+                status=AUTO_RESOLVED,
+                closed_at=now,
+                lease_owner=None,
+                lease_expires_at=None,
+                updated_at=func.now(),
+            )
             .returning(Investigation.id)
         )
     ).all()
@@ -102,6 +110,16 @@ async def get(
 ) -> Investigation | None:
     row = await session.get(Investigation, investigation_id)
     return row if row is not None and row.tenant_id == tenant_id else None
+
+
+async def steps(session: AsyncSession, investigation_id: uuid.UUID) -> Sequence[InvestigationStep]:
+    return (
+        await session.scalars(
+            select(InvestigationStep)
+            .where(InvestigationStep.investigation_id == investigation_id)
+            .order_by(InvestigationStep.id)
+        )
+    ).all()
 
 
 async def list_for_tenant(

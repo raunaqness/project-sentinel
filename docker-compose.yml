@@ -19,6 +19,9 @@ x-app: &app
     SENTINEL_MISSING_SETTLEMENT_SECONDS: ${SENTINEL_MISSING_SETTLEMENT_SECONDS:-86400}
     SENTINEL_RECONCILIATION_GRACE_SECONDS: ${SENTINEL_RECONCILIATION_GRACE_SECONDS:-300}
     SENTINEL_SCHEDULER_INTERVAL_SECONDS: ${SENTINEL_SCHEDULER_INTERVAL_SECONDS:-30}
+    SENTINEL_LEASE_SECONDS: ${SENTINEL_LEASE_SECONDS:-60}
+    SENTINEL_MAX_ATTEMPTS: ${SENTINEL_MAX_ATTEMPTS:-3}
+    FAIL_AFTER_STEP: ${FAIL_AFTER_STEP:-}
   logging: *default-logging
 
 services:
@@ -52,6 +55,13 @@ services:
   scheduler:
     <<: *app
     command: ["python", "-m", "sentinel.workers.scheduler"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  investigation-worker:
+    <<: *app
+    command: ["python", "-m", "sentinel.workers.investigation_worker"]
+    stop_grace_period: 30s  # time to finish the current step on SIGTERM
     depends_on:
       migrate: { condition: service_completed_successfully }
 

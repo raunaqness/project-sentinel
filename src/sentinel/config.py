@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     reconciliation_grace_seconds: int = 300  # tolerance for normal async arrival
     scheduler_interval_seconds: int = 30
 
+    # Investigation workflow
+    lease_seconds: int = 60  # a claimed job is reclaimable this long after the last heartbeat
+    max_attempts: int = 3
+    worker_poll_seconds: float = 1.0
+
+    # Failure injection (spec §21). Name kept exactly as in the brief: FAIL_AFTER_STEP.
+    # Applies to the first attempt of each investigation, so a restarted worker recovers.
+    fail_after_step: str | None = Field(default=None, validation_alias="FAIL_AFTER_STEP")
+    # Dev/test only: honour `metadata.fail_after_step` on events for per-investigation faults.
+    allow_fault_injection: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -64,7 +64,7 @@ def test_mismatch_opens_exactly_one_investigation(client: httpx.Client) -> None:
 
     (inv,) = investigations(client, txn)
     assert inv["anomaly_type"] == "SETTLEMENT_MISMATCH"
-    assert inv["status"] == "OPEN"
+    assert inv["closed_at"] is None  # still active (queued, running or awaiting review)
     assert inv["priority"] == "HIGH"  # MEDIUM severity, amount >= 10,000
 
     detail = client.get(f"/investigations/{inv['id']}", params={"tenant_id": TENANT})
@@ -81,7 +81,8 @@ def test_investigation_auto_resolves_when_finding_resolves(client: httpx.Client)
     ]:
         assert client.post("/events", json=event(txn, source, type_, 10000)).status_code == 202
 
-    wait_until(lambda: [i["status"] for i in investigations(client, txn)] == ["OPEN"])
+    # Wait for an active investigation (the worker may already have run it).
+    wait_until(lambda: [i["closed_at"] for i in investigations(client, txn)] == [None])
     assert (
         client.post("/events", json=event(txn, "LEDGER", "LEDGER_POSTED", 10000)).status_code == 202
     )
@@ -95,4 +96,5 @@ def test_investigation_auto_resolves_when_finding_resolves(client: httpx.Client)
             "/audit-logs", params={"tenant_id": TENANT, "entity_id": inv["id"]}
         ).json()
     ]
-    assert sorted(actions) == ["INVESTIGATION_AUTO_RESOLVED", "INVESTIGATION_CREATED"]
+    assert actions.count("INVESTIGATION_CREATED") == 1
+    assert actions.count("INVESTIGATION_AUTO_RESOLVED") == 1

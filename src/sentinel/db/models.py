@@ -163,3 +163,30 @@ class Investigation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    current_step: Mapped[str | None] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(server_default="0")
+    llm_requests: Mapped[int] = mapped_column(server_default="0")
+    lease_owner: Mapped[str | None] = mapped_column(Text)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    report: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class InvestigationStep(Base):
+    """Checkpoint of one completed workflow step."""
+
+    __tablename__ = "investigation_steps"
+    __table_args__ = (
+        UniqueConstraint("investigation_id", "step", name="uq_steps_investigation_step"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    investigation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("investigations.id")
+    )
+    step: Mapped[str] = mapped_column(Text)
+    attempt: Mapped[int]
+    output: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

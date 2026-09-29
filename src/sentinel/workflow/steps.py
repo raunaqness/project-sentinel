@@ -1,0 +1,116 @@
+"""The work done at each workflow step. Each returns a JSON-serialisable checkpoint."""
+
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sentinel.ai.investigator import Investigator
+from sentinel.ai.schemas import InvestigationInput, InvestigationReport
+from sentinel.db.models import Event, ReconciliationResult, Transaction
+from sentinel.workflow.states import Step
+
+
+class VerificationError(Exception):
+    pass
+
+
+@dataclass
+class StepContext:
+    investigation_id: str
+    tenant_id: str
+    transaction_id: str
+    anomaly_type: str
+    reconciliation_result_id: int
+    outputs: dict[str, dict[str, Any]]  # checkpoints of completed steps
+    session: AsyncSession
+    investigator: Investigator
+    before_llm_call: Callable[[], Awaitable[None]]
+
+
+def _json(value: object) -> Any:
+    return None if value is None else str(value)
+
+
+async def started(ctx: StepContext) -> dict[str, Any]:
+    return {}
+
+
+async def collect_transaction(ctx: StepContext) -> dict[str, Any]:
+    txn = await ctx.session.get(Transaction, (ctx.tenant_id, ctx.transaction_id))
+    finding = await ctx.session.get(ReconciliationResult, ctx.reconciliation_result_id)
+    if txn is None or finding is None:
+        raise LookupError("transaction or finding disappeared")
+    columns = [c.key for c in Transaction.__table__.columns if c.key != "tenant_id"]
+    return {
+        "transaction": {c: _json(getattr(txn, c)) for c in columns},
+        "finding": {"anomaly_type": finding.anomaly_type, **finding.details},
+    }
+
+
+async def collect_events(ctx: StepContext) -> dict[str, Any]:
+    rows = await ctx.session.scalars(
+        select(Event)
+        .where(Event.tenant_id == ctx.tenant_id, Event.transaction_id == ctx.transaction_id)
+        .order_by(Event.event_timestamp, Event.id)
+    )
+    return {
+        "events": [
+            {
+                "event_id": e.event_id,
+                "source": e.source,
+                "type": e.type,
+                "amount": _json(e.amount),
+                "currency": e.currency,
+                "event_timestamp": e.event_timestamp.isoformat(),
+            }
+            for e in rows
+        ]
+    }
+
+
+async def retrieve_knowledge(ctx: StepContext) -> dict[str, Any]:
+    return {"chunks": []}  # knowledge base arrives in Phase 6
+
+
+async def analyze(ctx: StepContext) -> dict[str, Any]:
+    data = InvestigationInput(
+        tenant_id=ctx.tenant_id,
+        transaction_id=ctx.transaction_id,
+        anomaly_type=ctx.anomaly_type,
+        finding=ctx.outputs[Step.TRANSACTION_DATA_COLLECTED]["finding"],
+        transaction=ctx.outputs[Step.TRANSACTION_DATA_COLLECTED]["transaction"],
+        events=ctx.outputs[Step.RELATED_EVENTS_COLLECTED]["events"],
+        knowledge=ctx.outputs[Step.KNOWLEDGE_RETRIEVED]["chunks"],
+    )
+    await ctx.before_llm_call()
+    report = await ctx.investigator.analyze(data)
+    return {"report": report.model_dump(mode="json")}
+
+
+async def verify(ctx: StepContext) -> dict[str, Any]:
+    """Every fact must cite evidence we actually hold."""
+    report = InvestigationReport.model_validate(ctx.outputs[Step.AI_ANALYSIS_COMPLETED]["report"])
+    known = {e["event_id"] for e in ctx.outputs[Step.RELATED_EVENTS_COLLECTED]["events"]}
+    known |= {c["chunk_id"] for c in ctx.outputs[Step.KNOWLEDGE_RETRIEVED]["chunks"]}
+    unsupported = [f.source for f in report.facts if f.source not in known]
+    if unsupported:
+        raise VerificationError(f"facts cite unknown sources: {unsupported}")
+    return {"verified": True, "facts_checked": len(report.facts)}
+
+
+async def complete(ctx: StepContext) -> dict[str, Any]:
+    return {}  # the engine stores the report in the same DB transaction as this checkpoint
+
+
+STEP_FUNCTIONS: dict[Step, Callable[[StepContext], Awaitable[dict[str, Any]]]] = {
+    Step.STARTED: started,
+    Step.TRANSACTION_DATA_COLLECTED: collect_transaction,
+    Step.RELATED_EVENTS_COLLECTED: collect_events,
+    Step.KNOWLEDGE_RETRIEVED: retrieve_knowledge,
+    Step.AI_ANALYSIS_COMPLETED: analyze,
+    Step.RESULT_VERIFIED: verify,
+    Step.COMPLETED: complete,
+}
