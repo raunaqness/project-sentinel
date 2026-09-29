@@ -17,7 +17,7 @@ marked *Pending* has not been built yet.
 | [6](#q6) | §10 | Tenant isolation in retrieval | Answered |
 | [7](#q7) | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | Answered |
 | [8](#q8) | §11.3 | Invalid / malformed model output | Answered |
-| [9](#q9) | §13 | RBAC & audit enforcement | Pending (Phase 8) |
+| [9](#q9) | §13 | RBAC & audit enforcement | Answered |
 | [10](#q10) | §14 | Indexes, constraints, transaction boundaries | Pending (Phases 1–5) |
 | [11](#q11) | §15 | Commit-then-crash-before-ack; where "exactly once" holds | Pending (Phase 9) |
 | [12](#q12) | §16 | Backpressure, priority, rate limiting, retries | Pending (Phase 9) |
@@ -294,13 +294,31 @@ event received, discrepancy detected, investigation created, AI workflow started
 retry, completion, approval and rejection. Include actor, tenant, entity, action
 and timestamp.*
 
-**Status:** Pending (Phase 8)
+**Status:** Answered (Phase 8)
 
-**Answer:** —
+**Answer:** Every API key belongs to one user, one tenant and one role; only its
+SHA-256 hash is stored. Each route declares the permission it needs (`read`, `review`,
+`audit`, `ingest`) and a FastAPI dependency enforces it server-side before the handler
+runs — VIEWER reads, INVESTIGATOR also reviews, ADMIN also reads the audit trail and
+submits events, and SERVICE (source systems) may only submit events for its own
+tenant. The tenant is always taken from the key, never from the request; every query
+filters by it, and another tenant's resources return 404 so their existence is not
+revealed.
 
-**Proof:** —
+Audit rows (`actor`, `tenant_id`, `action`, `entity_type`, `entity_id`, `details`,
+`created_at`) are written in the same DB transaction as the change they describe:
+event received, discrepancy detected/resolved, investigation created, workflow
+started/resumed, completed, failed, retried, approved and rejected. Human actions are
+attributed to `user:<name>`, system actions to the component (`system:event-consumer`,
+`worker:<id>`).
 
-**Details:** —
+**Proof:**
+- `tests/integration/test_rbac.py` — role × endpoint matrix, tenant A vs tenant B,
+  concurrent approve/reject (exactly one 200, one 409), retry
+- `scripts/walkthrough.sh r t`
+
+**Details:** [`api/auth.py`](src/sentinel/api/auth.py), [ADR-012](docs/decisions.md#adr-012),
+[ADR-011](docs/decisions.md#adr-011)
 
 ---
 
