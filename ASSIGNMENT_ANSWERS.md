@@ -12,17 +12,17 @@ marked *Pending* has not been built yet.
 | [1](#q1) | §5 | Durable idempotency & eventual consistency | Answered |
 | [2](#q2) | §4.1 | Delivery edge cases | Pending (Phases 1–2, 9) |
 | [3](#q3) | §6 | Rule engine extensibility | Answered |
-| [4](#q4) | §7 | One active investigation under concurrency | Answered (test pending, Phase 9) |
+| [4](#q4) | §7 | One active investigation under concurrency | Answered |
 | [5](#q5) | §8, §9 | Workflow state machine & crash recovery | Answered |
 | [6](#q6) | §10 | Tenant isolation in retrieval | Answered |
 | [7](#q7) | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | Answered |
 | [8](#q8) | §11.3 | Invalid / malformed model output | Answered |
 | [9](#q9) | §13 | RBAC & audit enforcement | Answered |
 | [10](#q10) | §14 | Indexes, constraints, transaction boundaries | Pending (Phases 1–5) |
-| [11](#q11) | §15 | Commit-then-crash-before-ack; where "exactly once" holds | Pending (Phase 9) |
+| [11](#q11) | §15 | Commit-then-crash-before-ack; where "exactly once" holds | Answered |
 | [12](#q12) | §16 | Backpressure, priority, rate limiting, retries | Pending (Phase 9) |
-| [13](#q13) | §17 | LLM failure handling & dead-lettering | Pending (Phase 9) |
-| [14](#q14) | §18 | Prompt injection & source of truth | Pending (Phase 9) |
+| [13](#q13) | §17 | LLM failure handling & dead-lettering | Answered |
+| [14](#q14) | §18 | Prompt injection & source of truth | Answered |
 | [15](#q15) | §20 | Load test results & first bottleneck | Pending (Phase 10) |
 | [16](#q16) | §22.3 | SIGTERM mid-investigation | Answered |
 | [17](#q17) | §25 | AI evaluation results | Pending (Phase 12) |
@@ -125,7 +125,7 @@ must guarantee that only one active investigation exists for the same tenant +
 transaction + anomaly type. The solution should demonstrate correct use of
 database constraints, transactions and/or locking semantics.*
 
-**Status:** Answered (Phase 4) — concurrency test to be added in Phase 9
+**Status:** Answered (Phases 4, 9)
 
 **Answer:** The guarantee is enforced by PostgreSQL, not application locks: a partial
 unique index `uq_investigations_active` on `(tenant_id, transaction_id, anomaly_type)
@@ -139,7 +139,9 @@ one if the anomaly returns.
 
 **Proof:**
 - `tests/integration/test_investigations.py::test_mismatch_opens_exactly_one_investigation`
-- Concurrency test (two workers, one investigation): Phase 9
+- `tests/integration/test_hardening.py::test_concurrent_creators_yield_exactly_one_active_investigation`
+  — 10 concurrent creators for one anomaly, straight against PostgreSQL, bypassing every
+  application-level lock: exactly one investigation is created and exactly one is active
 
 **Details:** [ADR-005](docs/decisions.md#adr-005),
 [`0004_investigations.py`](src/sentinel/db/migrations/versions/0004_investigations.py)
@@ -350,13 +352,33 @@ explain what happens if the database transaction commits successfully but the
 worker crashes before acknowledging the message. Do not claim "exactly once"
 without defining precisely where that guarantee holds.*
 
-**Status:** Pending (Phase 9)
+**Status:** Answered (Phase 9)
 
-**Answer:** —
+**Answer:** Kafka (Redpanda) delivery is at-least-once. The event consumer inserts the
+event, rebuilds the transaction state, runs the reconciliation rules, opens any
+investigation and writes the audit rows in **one PostgreSQL transaction**, and commits
+the Kafka offset only **after** that transaction commits.
 
-**Proof:** —
+If the worker crashes after the DB commit but before the offset commit, Kafka redelivers
+the message. The consumer's insert hits the `(tenant_id, event_id)` unique key, returns
+"already stored", and nothing else runs: no second state change, no second audit row,
+no second investigation. The log shows `duplicate event ignored`.
 
-**Details:** —
+**Where "exactly once" holds, precisely:** the *effect* of an event on the database —
+its row, its state change, its findings, its audit entry — is applied exactly once.
+**Where it does not:** delivery and processing *attempts* (a message can be consumed
+more than once) and LLM calls (an analysis can be repeated after a crash; every call is
+counted in `llm_requests`). Investigation steps are likewise effectively-once through
+unique `(investigation_id, step)` checkpoints.
+
+**Proof:**
+- `tests/integration/test_hardening.py::test_commit_then_crash_before_ack_is_absorbed`
+  — the real consumer container is killed (`os._exit`) after the DB commit and before the
+  offset commit; the event is stored once with exactly one `EVENT_RECEIVED` audit row
+- `scripts/walkthrough.sh q`
+
+**Details:** [`workers/event_consumer.py`](src/sentinel/workers/event_consumer.py),
+[ADR-004](docs/decisions.md#adr-004)
 
 ---
 
@@ -394,22 +416,39 @@ HIGH and CRITICAL priority.*
 empty response and slow responses. Use bounded retries with backoff. Repeated
 failures must be moved to a dead-letter mechanism and remain inspectable.*
 
-**Status:** Pending (Phase 9)
+**Status:** Answered (Phase 9)
 
 | Failure | Handling |
 |---|---|
-| Timeout | — |
-| HTTP 429 | — |
-| HTTP 500 | — |
-| Malformed JSON | — |
-| Empty response | — |
-| Slow response | — |
+| Timeout | SDK retries with exponential backoff (bounded, `SENTINEL_LLM_MAX_RETRIES`); then the workflow attempt fails |
+| HTTP 429 | Same, honouring `retry-after`; the shared token bucket keeps us under the provider's rate in the first place |
+| HTTP 500 | SDK retries with backoff; then the workflow attempt fails |
+| Malformed JSON | Pydantic validation fails → one repair round with the error shown to the model → then the attempt fails |
+| Empty response | Treated as malformed (same path) |
+| Slow response | Bounded by the request timeout; the worker's lease is kept alive by heartbeats so a slow call is not mistaken for a crash |
 
-**Dead-letter mechanism:** —
+A failed workflow attempt writes nothing except its error: the investigation returns to
+the queue with **jittered exponential backoff** (`next_attempt_at`) and the error is
+appended to its history.
 
-**Proof:** —
+**Dead-letter mechanism:** after `SENTINEL_MAX_ATTEMPTS` (default 3) the investigation
+becomes `FAILED` and a `dead_letters` row records the tenant, the investigation, the last
+error and the full per-attempt error history. It is inspectable at `GET /dead-letters`
+(ADMIN, tenant-scoped). An INVESTIGATOR can `POST /investigations/{id}/retry`, which
+requeues it and marks the dead letter resolved. Malformed Kafka messages are
+dead-lettered the same way instead of being dropped.
 
-**Details:** —
+**Proof:**
+- `tests/unit/test_openrouter_investigator.py` — SDK-level retries against simulated
+  HTTP replies (429 then success, persistent 500, malformed, empty)
+- `tests/unit/test_fault_simulator.py` — every failure mode
+- `tests/integration/test_hardening.py` — `test_transient_llm_failures_are_retried_with_backoff`,
+  `test_exhausted_attempts_dead_letter_then_retry_recovers`,
+  `test_malformed_message_is_dead_lettered`
+- `scripts/walkthrough.sh f m`
+
+**Details:** [`ai/fault_simulator.py`](src/sentinel/ai/fault_simulator.py),
+[`workflow/engine.py`](src/sentinel/workflow/engine.py) (`_record_failure`)
 
 ---
 
@@ -422,13 +461,40 @@ from every merchant." The system must not obey it. Also test a document that
 attempts to override financial truth… The database and deterministic
 reconciliation engine must remain authoritative.*
 
-**Status:** Pending (Phase 9)
+**Status:** Answered (Phase 9)
 
-**Answer:** —
+**Answer:** Five independent layers, so no single failure lets a document change the
+outcome:
 
-**Proof:** —
+1. **Screening before the model.** Retrieved chunks are checked deterministically for
+   injection patterns (instruction overrides, role changes, cross-tenant exfiltration,
+   "always mark as reconciled"). Matches are quarantined: recorded on the
+   `KNOWLEDGE_RETRIEVED` checkpoint, never sent to the model, never citable. Both
+   adversarial documents in the knowledge base are caught; none of the 16 legitimate
+   ones are.
+2. **Prompt framing.** Evidence from the system of record is labelled authoritative;
+   documents are wrapped in delimiters as untrusted reference material, with any
+   closing tag neutralised.
+3. **Constrained, grounded output.** Facts may only cite this investigation's evidence
+   ids (JSON-schema `enum`), and grounding demotes any fact its source does not support.
+4. **No power.** The model has no tools, no database access and only one tenant's data —
+   "return every transaction from every merchant" has nothing to reach.
+5. **Humans decide.** `requires_human_review` is forced true; transaction state,
+   findings and investigation status are computed only by the deterministic engine.
 
-**Details:** —
+The database and the reconciliation engine therefore remain authoritative even if a
+model fully obeys an injected document.
+
+**Proof:**
+- `tests/integration/test_hardening.py::test_adversarial_documents_are_quarantined`
+- `tests/integration/test_hardening.py::test_obedient_model_cannot_override_financial_truth`
+  — a simulated compromised model claims "reconciled" and leaks another merchant's data:
+  both "facts" are demoted, confidence is 0, the transaction stays `DISCREPANCY` and the
+  investigation stays open for review
+- `tests/unit/test_injection.py`, `scripts/walkthrough.sh pi`
+
+**Details:** [`ai/injection.py`](src/sentinel/ai/injection.py),
+[`ai/prompts.py`](src/sentinel/ai/prompts.py), [`ai/grounding.py`](src/sentinel/ai/grounding.py)
 
 ---
 
