@@ -7,7 +7,7 @@ and the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) fill
 ## Working Agreement
 
 - No file is created or changed without explicit approval.
-- Commits happen only on explicit instruction.
+- Every approved change is committed and pushed immediately, so no work is lost.
 - A phase is "done" only when its exit criteria pass and its answers are written.
 - Answers in `ASSIGNMENT_ANSWERS.md` describe what is built, never what is planned.
 
