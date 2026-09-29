@@ -49,6 +49,7 @@ async def sweep() -> int:
                         "state": outcome.state,
                         "opened": outcome.opened,
                         "resolved": outcome.resolved,
+                        "investigations_opened": outcome.investigations_opened,
                     },
                 )
     return len(candidates)

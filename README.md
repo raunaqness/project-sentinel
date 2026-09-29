@@ -26,8 +26,8 @@ Under active development. Progress is tracked phase by phase in [plan.md](plan.m
 | 1 | Event ingestion (§4) | Done |
 | 2 | Idempotency & transaction state (§5) | Done |
 | 3 | Reconciliation engine (§6) | Done |
-| 4 | Investigation creation (§7) | Next |
-| 5 | Investigation workflow & crash recovery (§8–9) | Not started |
+| 4 | Investigation creation (§7) | Done |
+| 5 | Investigation workflow & crash recovery (§8–9) | Next |
 | 6 | Knowledge base & retrieval (§10) | Not started |
 | 7 | AI investigator (§11) | Not started |
 | 8 | Review APIs, multi-tenancy, RBAC & audit (§12–13) | Not started |

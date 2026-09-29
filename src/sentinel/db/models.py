@@ -1,5 +1,6 @@
 """SQLAlchemy models. Migrations in db/migrations are the source of truth for DDL."""
 
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -15,8 +16,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -127,3 +129,37 @@ class AuditLog(Base):
     entity_id: Mapped[str] = mapped_column(Text)
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Investigation(Base):
+    """One investigation per anomaly; at most one *active* (closed_at IS NULL) per
+    tenant + transaction + anomaly type, enforced by a partial unique index."""
+
+    __tablename__ = "investigations"
+    __table_args__ = (
+        Index(
+            "uq_investigations_active",
+            "tenant_id",
+            "transaction_id",
+            "anomaly_type",
+            unique=True,
+            postgresql_where=text("closed_at IS NULL"),
+        ),
+        Index("ix_investigations_tenant_status", "tenant_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    tenant_id: Mapped[str] = mapped_column(Text, ForeignKey("tenants.id"))
+    transaction_id: Mapped[str] = mapped_column(Text)
+    anomaly_type: Mapped[str] = mapped_column(Text)
+    severity: Mapped[str] = mapped_column(Text)
+    priority: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text)
+    reconciliation_result_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("reconciliation_results.id")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

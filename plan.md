@@ -114,12 +114,15 @@ still shows one row. Unit test for validation, one integration test against comp
 
 **Done when:** each rule has a unit test; mismatched transactions show results via API.
 
-### Phase 4 — Investigation Creation (§7)
+### Phase 4 — Investigation Creation (§7) ✅
 
-- [ ] `investigations` table with partial unique index on
-      (tenant, transaction, anomaly type) WHERE active
-- [ ] Create investigation on rule failure (`INSERT … ON CONFLICT DO NOTHING`)
-- [ ] Priority scoring (LOW → CRITICAL)
+- [x] `investigations` table with partial unique index on
+      (tenant, transaction, anomaly type) WHERE `closed_at IS NULL`
+- [x] Created with the finding, in the same DB transaction (`INSERT … ON CONFLICT DO NOTHING`)
+- [x] Auto-resolved (`AUTO_RESOLVED`) when the finding resolves before work starts
+- [x] Priority scoring (LOW → CRITICAL) from anomaly, severity and amount
+- [x] Audit: INVESTIGATION_CREATED, INVESTIGATION_AUTO_RESOLVED
+- [x] `GET /investigations`, `GET /investigations/{id}` (tenant-scoped)
 
 **Done when:** a mismatch opens exactly one investigation, visible via API.
 

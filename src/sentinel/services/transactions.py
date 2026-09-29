@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sentinel.db.models import Event, ReconciliationResult, Transaction
 from sentinel.domain.transaction_state import TxnState, compute_state, overall_state
 from sentinel.reconciliation.engine import context_at, evaluate
-from sentinel.services import audit
+from sentinel.services import audit, investigations
 
 OPEN, RESOLVED = "OPEN", "RESOLVED"
 
@@ -25,6 +25,7 @@ class ReconcileOutcome:
     state: TxnState
     opened: list[str] = field(default_factory=list)
     resolved: list[str] = field(default_factory=list)
+    investigations_opened: list[str] = field(default_factory=list)
 
 
 async def reconcile(
@@ -76,6 +77,7 @@ async def reconcile(
     }
     outcome = ReconcileOutcome(state=state)
 
+    opened_rows: list[ReconciliationResult] = []
     for anomaly_type, finding in findings.items():
         row = existing.get(anomaly_type)
         if row is None:
@@ -88,6 +90,7 @@ async def reconcile(
             session.add(row)
         if row.status != OPEN:
             outcome.opened.append(anomaly_type)
+            opened_rows.append(row)
             row.resolved_at = None
         row.status = OPEN
         row.severity = finding.severity
@@ -120,6 +123,16 @@ async def reconcile(
             entity_id=transaction_id,
             details={"anomaly_type": anomaly_type},
         )
+        await investigations.auto_resolve(
+            session, tenant_id, transaction_id, anomaly_type, actor=actor, now=now
+        )
+
+    await session.flush()  # assigns ids to newly opened findings
+    amount = facts.payment_amount or facts.ledger_amount or facts.settlement_amount
+    for row in opened_rows:
+        investigation_id = await investigations.open_for_finding(session, row, amount, actor=actor)
+        if investigation_id is not None:
+            outcome.investigations_opened.append(str(investigation_id))
     return outcome
 
 

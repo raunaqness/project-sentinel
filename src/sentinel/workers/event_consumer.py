@@ -64,7 +64,12 @@ async def handle(record: ConsumerRecord[bytes, bytes]) -> None:
             return
         log.info(
             "event stored",
-            extra={"state": outcome.state, "opened": outcome.opened, "resolved": outcome.resolved},
+            extra={
+                "state": outcome.state,
+                "opened": outcome.opened,
+                "resolved": outcome.resolved,
+                "investigations_opened": outcome.investigations_opened,
+            },
         )
 
 
