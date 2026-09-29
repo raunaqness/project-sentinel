@@ -9,7 +9,7 @@ marked *Pending* has not been built yet.
 
 | Q | Spec § | Topic | Status |
 |---|---|---|---|
-| [1](#q1) | §5 | Durable idempotency & eventual consistency | Pending (Phase 2) |
+| [1](#q1) | §5 | Durable idempotency & eventual consistency | Answered |
 | [2](#q2) | §4.1 | Delivery edge cases | Pending (Phases 1–2, 9) |
 | [3](#q3) | §6 | Rule engine extensibility | Pending (Phase 3) |
 | [4](#q4) | §7 | One active investigation under concurrency | Pending (Phases 4, 9) |
@@ -41,13 +41,25 @@ updates. Implement idempotency with durable guarantees. Do not rely only on an
 ephemeral Redis key. Maintain a materialized transaction state… The design must
 explicitly account for eventual consistency.*
 
-**Status:** Pending (Phase 2)
+**Status:** Answered (Phase 2)
 
-**Answer:** —
+**Answer:** Idempotency is enforced in PostgreSQL, not Redis. `events` has
+`UNIQUE (tenant_id, event_id)` and the consumer inserts with `ON CONFLICT DO NOTHING`.
+Only when the insert actually adds a row does it rebuild the transaction's state,
+**in the same DB transaction**, so an event and its effect commit or roll back
+together. Sending an event 20 times yields one row and one state change.
 
-**Proof:** —
+**Eventual consistency:** `POST /events` returns 202 once Kafka has the event; the
+state becomes visible after the consumer commits. Until every source has reported, a
+transaction is `PENDING` rather than wrong. Because state is recomputed from *all*
+stored events, late and out-of-order events converge on the same final state.
 
-**Details:** —
+**Proof:**
+- `tests/unit/test_transaction_state.py::test_arrival_order_does_not_matter`
+- `tests/integration/test_ingestion.py::test_event_is_stored_once_even_if_sent_twice`
+- `tests/integration/test_transaction_state.py::test_out_of_order_with_duplicate_reaches_correct_state`
+
+**Details:** [ADR-004](docs/decisions.md#adr-004)
 
 ---
 
