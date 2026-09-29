@@ -29,7 +29,7 @@ Under active development. Progress is tracked phase by phase in [plan.md](plan.m
 | 4 | Investigation creation (§7) | Done |
 | 5 | Investigation workflow & crash recovery (§8–9) | Done |
 | 6 | Knowledge base & retrieval (§10) | Done |
-| 7 | AI investigator (§11) | Done (real-model check pending) |
+| 7 | AI investigator (§11) | Done |
 | 8 | Review APIs, multi-tenancy, RBAC & audit (§12–13) | Next |
 | 9 | Hardening (§14–18) | Not started |
 | 10 | Observability, load & failure injection (§19–21) | Not started |

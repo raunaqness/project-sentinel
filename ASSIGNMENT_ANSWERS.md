@@ -15,8 +15,8 @@ marked *Pending* has not been built yet.
 | [4](#q4) | §7 | One active investigation under concurrency | Answered (test pending, Phase 9) |
 | [5](#q5) | §8, §9 | Workflow state machine & crash recovery | Answered |
 | [6](#q6) | §10 | Tenant isolation in retrieval | Answered |
-| [7](#q7) | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | Pending (Phase 7) |
-| [8](#q8) | §11.3 | Invalid / malformed model output | Pending (Phase 7) |
+| [7](#q7) | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | Answered |
+| [8](#q8) | §11.3 | Invalid / malformed model output | Answered |
 | [9](#q9) | §13 | RBAC & audit enforcement | Pending (Phase 8) |
 | [10](#q10) | §14 | Indexes, constraints, transaction boundaries | Pending (Phases 1–5) |
 | [11](#q11) | §15 | Commit-then-crash-before-ack; where "exactly once" holds | Pending (Phase 9) |
@@ -228,13 +228,34 @@ state transitions must be deterministic. AI should be used for interpreting
 evidence, correlating runbooks, explaining likely causes and suggesting
 investigation steps.*
 
-**Status:** Pending (Phase 7)
+**Status:** Answered (Phase 7)
 
-**Answer:** —
+**Answer:** Arithmetic, amount comparison, state transitions, rule outcomes, priority
+and investigation status are pure deterministic Python over database records; the AI
+never computes or changes them. The model receives the rule's finding and the
+transaction state as authoritative evidence and only explains.
 
-**Proof:** —
+FACT, HYPOTHESIS and RECOMMENDATION are separate fields. A fact must cite exactly one id
+from this investigation's evidence (`finding`, `transaction`, an event id or a retrieved
+chunk id); the per-request JSON schema restricts `source` to that `enum`, so any other
+citation cannot be produced. A deterministic grounding step then keeps a fact only if its
+cited source contains every number in it; anything else is moved to hypotheses as
+`Unverified: …`. Confidence is capped by the share of facts that survived, and
+`requires_human_review` cannot be switched off by the model.
 
-**Details:** —
+**Real run (gpt-4o-mini):** the facts were the amounts, cited to `transaction` and
+`finding`; the 0.5% MDR explanation appeared only as a hypothesis ("may be due to the
+merchant discount rate … in the merchant's fee agreement"). In an earlier run, before
+citations were constrained, the model cited `"TRANSACTION"` — all five facts were
+demoted by grounding (confidence would now be capped to 0).
+
+**Proof:**
+- `tests/unit/test_grounding.py` — incl. the spec's example: "the gateway charged 0.5%
+  MDR" is demoted unless a cited document supports it
+- `scripts/walkthrough.sh ai`
+
+**Details:** [`ai/grounding.py`](src/sentinel/ai/grounding.py),
+[`ai/prompts.py`](src/sentinel/ai/prompts.py), [ADR-009](docs/decisions.md#adr-009)
 
 ---
 
@@ -244,13 +265,22 @@ investigation steps.*
 **Spec §11.3:** *Use Pydantic, JSON Schema, or equivalent validation. Handle
 invalid JSON, missing fields, malformed responses and model failures safely.*
 
-**Status:** Pending (Phase 7)
+**Status:** Answered (Phase 7)
 
-**Answer:** —
+**Answer:** Structured output is requested with a strict JSON schema and validated with
+Pydantic (`extra="forbid"`, value ranges, required fields). An empty, non-JSON,
+missing-field or out-of-range reply gets one repair round with the validation error
+shown to the model. If it fails again, the workflow step fails without writing anything
+and the investigation's bounded attempts retry it, ending in `FAILED`. HTTP 429, 5xx and
+timeouts are retried by the SDK with bounded exponential backoff. State cannot be
+corrupted: a report is committed only together with the final workflow checkpoint.
 
-**Proof:** —
+**Proof:** `tests/unit/test_openrouter_investigator.py` — simulated replies: invalid JSON,
+empty, `null` content, missing field, out-of-range value, unexpected field, 429 then
+success, persistent 500.
 
-**Details:** —
+**Details:** [`ai/openrouter_investigator.py`](src/sentinel/ai/openrouter_investigator.py),
+[`ai/schemas.py`](src/sentinel/ai/schemas.py)
 
 ---
 

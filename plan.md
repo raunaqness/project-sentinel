@@ -159,7 +159,7 @@ the investigation with no duplicate.
 **Done when:** retrieval returns relevant chunks and never another tenant's.
 OpenRouter embeddings endpoint confirmed (`openai/text-embedding-3-small`, 1536 dims).
 
-### Phase 7 — AI Investigator (§11) ✅ (real-model run pending on the VPS)
+### Phase 7 — AI Investigator (§11) ✅
 
 - [x] `OpenRouterInvestigator` (OpenAI SDK → OpenRouter, default `openai/gpt-4o-mini`),
       selected with `SENTINEL_INVESTIGATOR=openrouter|mock`; tests/CI use the mock
@@ -174,7 +174,7 @@ OpenRouter embeddings endpoint confirmed (`openai/text-embedding-3-small`, 1536 
 - [x] Graceful SIGTERM demonstrated (walkthrough `s`)
 
 **Done when:** a real mismatch produces a validated, evidence-backed report.
-**Open:** run `scripts/walkthrough.sh ai k b` on the VPS with `SENTINEL_INVESTIGATOR=openrouter`.
+Verified on the VPS with `openai/gpt-4o-mini` and OpenRouter embeddings: 5/5 facts grounded, ~2k tokens, 3–6 s per investigation.
 
 ### Phase 8 — Review APIs, Multi-Tenancy, RBAC & Audit (§12, §13)
 
