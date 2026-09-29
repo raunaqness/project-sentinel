@@ -25,6 +25,7 @@ def test_documents_are_wrapped_as_untrusted_and_cannot_break_out() -> None:
     assert user["content"].count("</document>") == 1  # only our own closing tag
     assert '<document id="chunk_1"' in user["content"]
     assert "fail_after_step" not in user["content"]  # operational metadata never reaches the model
+    assert 'CITABLE SOURCES: ["finding", "transaction", "evt_1", "chunk_1"]' in user["content"]
 
 
 def test_system_prompt_states_the_rules() -> None:

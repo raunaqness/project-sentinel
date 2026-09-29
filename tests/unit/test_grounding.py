@@ -65,3 +65,29 @@ def test_unknown_source_is_demoted() -> None:
 def test_model_cannot_skip_human_review() -> None:
     grounded, _ = ground(report(), EVENTS, CHUNKS, AUTHORITATIVE)
     assert grounded.requires_human_review is True
+
+
+def test_rule_output_and_state_are_citable() -> None:
+    grounded, _ = ground(
+        report(Fact(claim="The difference is INR 50.00", source="finding")),
+        EVENTS,
+        CHUNKS,
+        AUTHORITATIVE,
+    )
+    assert len(grounded.facts) == 1
+
+
+def test_vps_regression_invented_source_names_are_demoted_and_confidence_capped() -> None:
+    """Real run: gpt-4o-mini cited 'TRANSACTION'/'FINDING' (not ids) with confidence 0.9."""
+    grounded, stats = ground(
+        report(
+            Fact(claim="The payment amount is 10000.00 INR.", source="TRANSACTION"),
+            Fact(claim="The difference is 50.00 INR.", source="FINDING"),
+        ),
+        EVENTS,
+        CHUNKS,
+        AUTHORITATIVE,
+    )
+    assert grounded.facts == []
+    assert grounded.confidence == 0.0
+    assert stats["model_confidence"] == 0.9

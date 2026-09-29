@@ -84,6 +84,10 @@ def test_valid_reply_parsed_with_usage() -> None:
     request = seen[0]
     assert request["model"] == "openai/gpt-4o-mini"
     assert request["response_format"]["json_schema"]["strict"] is True
+    source = request["response_format"]["json_schema"]["schema"]["properties"]["facts"]["items"][
+        "properties"
+    ]["source"]
+    assert source["enum"] == ["finding", "transaction", "evt_s"]  # only ids that exist
     assert request["temperature"] == 0
 
 

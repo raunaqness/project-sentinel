@@ -9,11 +9,12 @@ from openai import AsyncOpenAI
 
 from sentinel.ai.prompts import build_messages
 from sentinel.ai.schemas import (
-    REPORT_JSON_SCHEMA,
     AnalysisResult,
     InvestigationInput,
     ReportFormatError,
+    citable_sources,
     parse_report,
+    report_json_schema,
 )
 from sentinel.config import get_settings
 
@@ -21,10 +22,16 @@ log = logging.getLogger("sentinel.ai")
 
 REPAIR_ATTEMPTS = 1  # one chance to fix a malformed reply, then the step fails and retries
 
-_RESPONSE_FORMAT = {
-    "type": "json_schema",
-    "json_schema": {"name": "investigation_report", "strict": True, "schema": REPORT_JSON_SCHEMA},
-}
+
+def _response_format(data: InvestigationInput) -> dict[str, Any]:
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "investigation_report",
+            "strict": True,
+            "schema": report_json_schema(citable_sources(data)),
+        },
+    }
 
 
 class OpenRouterInvestigator:
@@ -68,7 +75,7 @@ class OpenRouterInvestigator:
                 model=self._model,
                 messages=cast(Any, messages),
                 temperature=0,
-                response_format=cast(Any, _RESPONSE_FORMAT),
+                response_format=cast(Any, _response_format(data)),
             )
             if response.usage is not None:
                 usage["prompt_tokens"] += response.usage.prompt_tokens

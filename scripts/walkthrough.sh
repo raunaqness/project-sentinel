@@ -55,6 +55,10 @@ wait_for() {  # wait_for <seconds> <command...>: retry until the command's outpu
 
 header() { echo; echo "=== $1"; }
 
+psql_q() {
+  docker compose exec -T postgres psql -U "${POSTGRES_USER:-sentinel}" -d "${POSTGRES_DB:-sentinel}" -tA -c "$1"
+}
+
 # --- scenarios -------------------------------------------------------------
 scenario_a() {
   header "A: healthy transaction"
@@ -165,11 +169,11 @@ scenario_k() {
     "select c->>'chunk_id', c->>'scope', c->>'doc_key' from investigation_steps s,
             jsonb_array_elements(s.output->'chunks') c
       where s.investigation_id = '$id' and s.step = 'KNOWLEDGE_RETRIEVED'" | sed 's/^/    /'
-  expect "report cites a knowledge chunk" "$(invs "$t" | jq '[.[0].report.facts[].source | select(startswith("chunk_"))] | length > 0')" true
-}
-
-psql_q() {
-  docker compose exec -T postgres psql -U "${POSTGRES_USER:-sentinel}" -d "${POSTGRES_DB:-sentinel}" -tA -c "$1"
+  expect "retrieval found the merchant's own fee agreement" \
+    "$(psql_q "select count(*) > 0 from investigation_steps s, jsonb_array_elements(s.output->'chunks') c
+               where s.investigation_id = '$id' and s.step = 'KNOWLEDGE_RETRIEVED'
+                 and c->>'doc_key' = 'merchant-123-fee-agreement'")" t
+  echo "  sources cited by the report: $(invs "$t" | jq -c '[.[0].report.facts[].source]')"
 }
 
 scenario_ai() {
@@ -186,8 +190,9 @@ scenario_ai() {
   echo "  verified report:"
   invs "$t" | jq '.[0].report' | sed 's/^/    /'
   expect "requires_human_review" "$(invs "$t" | jq '.[0].report.requires_human_review')" true
-  expect "every fact cites an event or chunk of this investigation" \
-    "$(invs "$t" | jq --arg r "$RUN" '[.[0].report.facts[].source | select(test("^(chunk_[0-9]+|evt_AI_.*_" + $r + ")$") | not)] | length')" 0
+  expect "every fact cites evidence of this investigation" \
+    "$(invs "$t" | jq --arg r "$RUN" '[.[0].report.facts[].source | select(test("^(finding|transaction|chunk_[0-9]+|evt_AI_.*_" + $r + ")$") | not)] | length')" 0
+  echo "  facts kept: $(invs "$t" | jq '.[0].report.verification.facts_supported') of $(invs "$t" | jq '.[0].report.verification.facts_total')"
 }
 
 scenario_s() {

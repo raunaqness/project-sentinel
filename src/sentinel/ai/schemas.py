@@ -58,6 +58,29 @@ def parse_report(text: str | None) -> InvestigationReport:
         raise ReportFormatError(f"schema mismatch: {error.errors(include_url=False)}") from error
 
 
+AUTHORITATIVE_SOURCES = ("finding", "transaction")  # citable ids for rule output and state
+
+
+def citable_sources(data: InvestigationInput) -> list[str]:
+    """Every id a fact may cite for this investigation."""
+    return [
+        *AUTHORITATIVE_SOURCES,
+        *(e["event_id"] for e in data.events),
+        *(c["chunk_id"] for c in data.knowledge),
+    ]
+
+
+def report_json_schema(sources: list[str]) -> dict[str, Any]:
+    """Strict schema for structured outputs, with `source` limited to the given ids, so the
+    model cannot cite anything that does not exist for this investigation."""
+    schema: dict[str, Any] = json.loads(json.dumps(REPORT_JSON_SCHEMA))  # deep copy
+    schema["properties"]["facts"]["items"]["properties"]["source"] = {
+        "type": "string",
+        "enum": sources,
+    }
+    return schema
+
+
 # Strict JSON schema for OpenAI-style structured outputs (all fields required,
 # no additional properties).
 REPORT_JSON_SCHEMA: dict[str, Any] = {

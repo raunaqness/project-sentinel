@@ -34,6 +34,7 @@ def ground(
 ) -> tuple[InvestigationReport, dict[str, Any]]:
     sources: dict[str, str] = {e["event_id"]: json.dumps(e, default=str) for e in events}
     sources |= {c["chunk_id"]: str(c["content"]) for c in chunks}
+    sources |= {name: json.dumps(value, default=str) for name, value in authoritative.items()}
     always_known = _numbers(json.dumps(authoritative, default=str))
 
     kept: list[Fact] = []
@@ -54,8 +55,13 @@ def ground(
             continue
         kept.append(fact)
 
+    # Confidence cannot exceed the share of claimed facts that the evidence supports.
+    confidence = report.confidence
+    if report.facts:
+        confidence = min(confidence, round(len(kept) / len(report.facts), 2))
     grounded = report.model_copy(
         update={
+            "confidence": confidence,
             "facts": kept,
             "hypotheses": report.hypotheses + [f"Unverified: {d['claim']}" for d in demoted],
             "requires_human_review": True,  # the model cannot opt out of human review
@@ -65,5 +71,6 @@ def ground(
         "facts_total": len(report.facts),
         "facts_supported": len(kept),
         "unsupported_claims": demoted,
+        "model_confidence": report.confidence,
     }
     return grounded, stats
