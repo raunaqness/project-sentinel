@@ -12,7 +12,7 @@ marked *Pending* has not been built yet.
 | [1](#q1) | §5 | Durable idempotency & eventual consistency | Answered |
 | [2](#q2) | §4.1 | Delivery edge cases | Pending (Phases 1–2, 9) |
 | [3](#q3) | §6 | Rule engine extensibility | Answered |
-| [4](#q4) | §7 | One active investigation under concurrency | Pending (Phases 4, 9) |
+| [4](#q4) | §7 | One active investigation under concurrency | Answered (test pending, Phase 9) |
 | [5](#q5) | §8, §9 | Workflow state machine & crash recovery | Pending (Phase 5) |
 | [6](#q6) | §10 | Tenant isolation in retrieval | Pending (Phase 6) |
 | [7](#q7) | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | Pending (Phase 7) |
@@ -125,13 +125,24 @@ must guarantee that only one active investigation exists for the same tenant +
 transaction + anomaly type. The solution should demonstrate correct use of
 database constraints, transactions and/or locking semantics.*
 
-**Status:** Pending (Phases 4, 9)
+**Status:** Answered (Phase 4) — concurrency test to be added in Phase 9
 
-**Answer:** —
+**Answer:** The guarantee is enforced by PostgreSQL, not application locks: a partial
+unique index `uq_investigations_active` on `(tenant_id, transaction_id, anomaly_type)
+WHERE closed_at IS NULL`. Investigations are created with `INSERT … ON CONFLICT DO
+NOTHING` against that index, inside the same DB transaction as the finding that
+triggers them. If several workers detect the same anomaly at once, all attempt the
+insert; exactly one row is created and the rest are no-ops — there is no window
+between "check" and "insert". "Active" is defined as *not closed*, so adding workflow
+statuses never weakens the guarantee, and a closed investigation does not block a new
+one if the anomaly returns.
 
-**Proof:** —
+**Proof:**
+- `tests/integration/test_investigations.py::test_mismatch_opens_exactly_one_investigation`
+- Concurrency test (two workers, one investigation): Phase 9
 
-**Details:** —
+**Details:** [ADR-005](docs/decisions.md#adr-005),
+[`0004_investigations.py`](src/sentinel/db/migrations/versions/0004_investigations.py)
 
 ---
 
