@@ -63,13 +63,13 @@ Spec: §22.1, §23 (partial), §27 (skeletons)
 - [x] `pyproject.toml`, `uv.lock`, ruff/mypy/pytest configuration
 - [x] `src/sentinel/` package skeleton, `config.py`
 - [x] `.gitignore`
-- [ ] `docker-compose.yml` (secure base: no public ports except API on `127.0.0.1`):
+- [x] `docker-compose.yml` (secure base: no public ports except API on `127.0.0.1`):
       postgres (pgvector), redpanda, redis — with healthchecks, `restart: unless-stopped`,
       log rotation, named volumes
-- [ ] `docker-compose.dev.yml` (publishes infra ports for local development)
-- [ ] `docker-compose.vps.yml` (memory limits and tuning from the budget above)
-- [ ] `.env.example`, `.dockerignore`, `Makefile`
-- [ ] Minimal CI: lint + unit tests
+- [x] `docker-compose.dev.yml` (publishes infra ports for local development)
+- [x] `docker-compose.vps.yml` (memory limits and tuning from the budget above)
+- [x] `.env.example`, `.dockerignore`, `Makefile`
+- [x] Minimal CI: lint + unit tests
 
 **Exit:** `docker compose up` brings infrastructure up healthy; CI green.
 
