@@ -4,13 +4,13 @@ Direct answers to every question and capability requirement in the M37 Labs
 assignment brief. Each answer is short and points to the code, test or demo that
 proves it, with deeper detail in [`docs/`](docs/).
 
-Answers are filled in as each phase of [plan.md](plan.md) is completed. Anything
-marked *Pending* has not been built yet.
+Every question is answered. Where something was simplified or not measured, the
+answer says so.
 
 | Q | Spec § | Topic | Status |
 |---|---|---|---|
 | [1](#q1) | §5 | Durable idempotency & eventual consistency | Answered |
-| [2](#q2) | §4.1 | Delivery edge cases | Pending (Phases 1–2, 9) |
+| [2](#q2) | §4.1 | Delivery edge cases | Answered |
 | [3](#q3) | §6 | Rule engine extensibility | Answered |
 | [4](#q4) | §7 | One active investigation under concurrency | Answered |
 | [5](#q5) | §8, §9 | Workflow state machine & crash recovery | Answered |
@@ -18,18 +18,18 @@ marked *Pending* has not been built yet.
 | [7](#q7) | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | Answered |
 | [8](#q8) | §11.3 | Invalid / malformed model output | Answered |
 | [9](#q9) | §13 | RBAC & audit enforcement | Answered |
-| [10](#q10) | §14 | Indexes, constraints, transaction boundaries | Pending (Phases 1–5) |
+| [10](#q10) | §14 | Indexes, constraints, transaction boundaries | Answered |
 | [11](#q11) | §15 | Commit-then-crash-before-ack; where "exactly once" holds | Answered |
-| [12](#q12) | §16 | Backpressure, priority, rate limiting, retries | Pending (Phase 9) |
+| [12](#q12) | §16 | Backpressure, priority, rate limiting, retries | Answered |
 | [13](#q13) | §17 | LLM failure handling & dead-lettering | Answered |
 | [14](#q14) | §18 | Prompt injection & source of truth | Answered |
-| [15](#q15) | §20 | Load test results & first bottleneck | Pending (Phase 10) |
+| [15](#q15) | §20 | Load test results & first bottleneck | Answered |
 | [16](#q16) | §22.3 | SIGTERM mid-investigation | Answered |
-| [17](#q17) | §25 | AI evaluation results | Pending (Phase 12) |
-| [18](#q18) | §27 | Component rationale; strong vs eventual consistency | Pending (Phase 12) |
-| [19](#q19) | §28 | Failure model per dependency | Pending (Phase 12) |
-| [20](#q20) | §31 | Implemented / simplified / omitted / productionization | Pending (Phase 12) |
-| [21](#q21) | §32 | 1B events/day: first five changes | Pending (Phase 12) |
+| [17](#q17) | §25 | AI evaluation results | Answered |
+| [18](#q18) | §27 | Component rationale; strong vs eventual consistency | Answered |
+| [19](#q19) | §28 | Failure model per dependency | Answered |
+| [20](#q20) | §31 | Implemented / simplified / omitted / productionization | Answered |
+| [21](#q21) | §32 | 1B events/day: first five changes | Answered |
 
 ---
 
@@ -56,7 +56,7 @@ stored events, late and out-of-order events converge on the same final state.
 
 **Proof:**
 - `tests/unit/test_transaction_state.py::test_arrival_order_does_not_matter`
-- `tests/integration/test_ingestion.py::test_event_is_stored_once_even_if_sent_twice`
+- `tests/integration/test_ingestion.py::test_same_event_sent_ten_times_is_stored_once`
 - `tests/integration/test_transaction_state.py::test_out_of_order_with_duplicate_reaches_correct_state`
 
 **Details:** [ADR-004](docs/decisions.md#adr-004)
@@ -70,22 +70,39 @@ stored events, late and out-of-order events converge on the same final state.
 out-of-order events, malformed events, retries and redelivery, worker crashes.
 The final transaction state must still be correct.*
 
-**Status:** Pending (Phases 1–2, 9)
+**Status:** Answered (Phases 1–2, 9)
 
-**Answer:** —
+**Answer:** Two properties make the final state correct whatever the delivery pattern:
+- every event is stored at most once (a PostgreSQL unique key);
+- the transaction's state is **recomputed from all of its stored events** by an
+  order-independent reducer, never patched incrementally.
 
 | Case | Handling |
 |---|---|
-| Duplicate events | — |
-| Delayed events | — |
-| Out-of-order events | — |
-| Malformed events | — |
-| Retries and redelivery | — |
-| Worker crashes | — |
+| Duplicate events | `UNIQUE (tenant_id, event_id)` plus `ON CONFLICT DO NOTHING`. A duplicate changes nothing: no state rebuild, no audit row, no investigation. It is counted as `events_processed_total{outcome="duplicate"}`. |
+| Delayed events | State converges once the event arrives. Grace periods are measured from **arrival** time, so a late but normal delivery isn't flagged. If a finding was opened (e.g. missing ledger) and the event then arrives, the finding is `RESOLVED` and its investigation is closed as `AUTO_RESOLVED`. |
+| Out-of-order events | The reducer's result doesn't depend on arrival order: amounts, statuses and counts are derived from the full set of events. |
+| Malformed events | **At the API:** strict Pydantic schema (unknown fields forbidden, enums, amount together with currency, timezone-aware timestamps), answered with **422**; the event never enters Kafka. **Already in Kafka** (another producer, schema drift): written to `dead_letters` with the error, offset committed, partition not blocked. |
+| Retries and redelivery | The Kafka offset is committed only **after** the DB transaction. A redelivered message is absorbed by the unique key. A client retry after a 503 is absorbed the same way. |
+| Worker crashes | **Consumer:** uncommitted messages are redelivered ([Q11](#q11)). **Investigation worker:** lease expiry plus checkpoints; it resumes after the last committed step ([Q5](#q5)). **Scheduler:** stateless. |
 
-**Proof:** —
+**Proof:**
+- `tests/unit/test_transaction_state.py::test_arrival_order_does_not_matter`
+- `tests/unit/test_rules.py::test_missing_ledger_grace_uses_arrival_time_not_event_time`
+- `tests/unit/test_events.py::test_malformed_events_rejected`
+- `tests/integration/test_ingestion.py::test_same_event_sent_ten_times_is_stored_once`,
+  `::test_malformed_event_rejected`
+- `tests/integration/test_transaction_state.py::test_out_of_order_with_duplicate_reaches_correct_state`
+- `tests/integration/test_reconciliation.py::test_missing_ledger_opens_then_resolves`
+- `tests/integration/test_investigations.py::test_investigation_auto_resolves_when_finding_resolves`
+- `tests/integration/test_hardening.py::test_malformed_message_is_dead_lettered`,
+  `::test_commit_then_crash_before_ack_is_absorbed`
+- Walkthrough `b`, `c`, `m`, `q`, `d1`.
+- The load test sends 5% duplicates, 10% out-of-order transactions and 3% delayed
+  events. Every accepted event was stored exactly once ([Q15](#q15)).
 
-**Details:** —
+**Details:** [architecture.md → Event path](docs/architecture.md#event-path),
+[`domain/transaction_state.py`](src/sentinel/domain/transaction_state.py)
 
 ---
 
@@ -277,9 +294,13 @@ and the investigation's bounded attempts retry it, ending in `FAILED`. HTTP 429,
 timeouts are retried by the SDK with bounded exponential backoff. State cannot be
 corrupted: a report is committed only together with the final workflow checkpoint.
 
-**Proof:** `tests/unit/test_openrouter_investigator.py` — simulated replies: invalid JSON,
-empty, `null` content, missing field, out-of-range value, unexpected field, 429 then
-success, persistent 500.
+**Proof:**
+- `tests/unit/test_openrouter_investigator.py`: simulated replies covering invalid JSON,
+  empty, `null` content, missing field, out-of-range value, unexpected field, a
+  classification outside the taxonomy, 429 then success, and persistent 500.
+- `tests/integration/test_hardening.py::test_malformed_llm_output_leaves_no_trace_and_is_retried`:
+  end to end, the invalid-JSON attempt persists no checkpoint or report, the transaction
+  and finding are unchanged, and the retry completes.
 
 **Details:** [`ai/openrouter_investigator.py`](src/sentinel/ai/openrouter_investigator.py),
 [`ai/schemas.py`](src/sentinel/ai/schemas.py)
@@ -330,17 +351,46 @@ attributed to `user:<name>`, system actions to the component (`system:event-cons
 **Spec §14:** *Indexes, constraints, unique keys and transaction boundaries should
 be intentional and documented.*
 
-**Status:** Pending (Phases 1–5)
+**Status:** Answered (Phases 1–9)
 
-**Answer:** —
+**Answer:** Correctness guarantees live in constraints, and every index serves a named
+query.
 
 | Table | Constraint / index | Why |
 |---|---|---|
-| — | — | — |
+| `events` | `UNIQUE (tenant_id, event_id)` | Durable idempotency ([Q1](#q1)) |
+| `events` | `ix_events_tenant_txn (tenant_id, transaction_id)` | Rebuilding one transaction's state from its events |
+| `transactions` | PK `(tenant_id, transaction_id)` | One materialized state per transaction per tenant |
+| `transactions` | `ix_transactions_tenant_state`, `ix_transactions_state_updated (state, updated_at)` | Per-tenant listing; the scheduler's least-recently-evaluated scan |
+| `reconciliation_results` | `UNIQUE (tenant_id, transaction_id, anomaly_type)`, FK to `transactions` | One finding per anomaly, re-opened or resolved in place |
+| `investigations` | Partial unique `uq_investigations_active (tenant_id, transaction_id, anomaly_type) WHERE closed_at IS NULL` | At most one **active** investigation ([Q4](#q4)) |
+| `investigations` | Partial `ix_investigations_claimable (created_at) WHERE status IN ('OPEN','IN_PROGRESS')` | Workers' claim query stays small however many closed investigations exist |
+| `investigation_steps` | `UNIQUE (investigation_id, step)` | Each checkpoint is written once ([Q5](#q5)) |
+| `users` | `UNIQUE (api_key_hash)`, `UNIQUE (name)`, `CHECK role IN (…)` | Key lookup; an invalid role can't be stored |
+| `document_chunks` | HNSW `(embedding vector_cosine_ops)`, GIN `(tsv)`, `ix_chunks_tenant` | Vector search, full-text search, tenant filter |
+| `documents` | `UNIQUE (doc_key)` | Idempotent knowledge-base ingest |
+| `audit_logs` | `(tenant_id, created_at)`, `(tenant_id, entity_type, entity_id)` | Tenant timeline; history of one entity |
+| `dead_letters` | `(tenant_id, resolved_at)` | Open dead letters per tenant |
 
-**Transaction boundaries:** —
+Every tenant-owned index **leads with `tenant_id`**, matching the mandatory tenant filter.
 
-**Details:** —
+**Transaction boundaries** (each row is one PostgreSQL transaction):
+
+| Operation | Contents |
+|---|---|
+| Consume one event | Event insert, audit `EVENT_RECEIVED`, state rebuild, rule findings, investigation creation or auto-resolution with their audit rows. Kafka offset committed *after*. |
+| Scheduler re-check of one transaction | `pg_advisory_xact_lock(tenant:txn)`, then reconcile and audit, as above |
+| Claim | `SELECT … FOR UPDATE SKIP LOCKED`, set lease, increment attempts, audit |
+| Checkpoint | Lease-checked `UPDATE investigations` plus insert into `investigation_steps` (and, at the end, the report and `INVESTIGATION_COMPLETED` audit row) |
+| Failure | Lease-checked requeue with backoff, or `FAILED` plus dead letter plus audit |
+| Review | Conditional `UPDATE … WHERE status = 'AWAITING_REVIEW'` plus audit (409 if no row matched) |
+
+The LLM call happens **outside** any DB transaction. Its result is persisted by the next
+checkpoint, so no transaction is held open across a network call.
+
+**Details:** [`db/models.py`](src/sentinel/db/models.py),
+[`db/migrations/versions`](src/sentinel/db/migrations/versions),
+[architecture.md → Data model](docs/architecture.md#data-model-postgresql)
 
 ---
 
@@ -392,20 +442,39 @@ document: queue growth strategy, worker concurrency, throttling, priority
 handling, rate limiting, retry policy. Investigations should support LOW, MEDIUM,
 HIGH and CRITICAL priority.*
 
-**Status:** Pending (Phase 9)
+**Status:** Answered (Phase 9). Implemented and tested at the component level; the
+10,000 events/s burst itself was not load-tested (see [Q15](#q15)).
+
+**Answer:** There are two queues, each durable and each drained at its own safe rate:
+- **Kafka** buffers events between the API and the consumer.
+- **PostgreSQL** (`investigations` with status `OPEN`) buffers investigations between
+  reconciliation and the LLM.
+
+A 10,000 events/s burst grows those queues instead of overloading anything. The LLM
+never sees more than 20 requests per second.
 
 | Concern | Approach |
 |---|---|
-| Queue growth strategy | — |
-| Worker concurrency | — |
-| Throttling | — |
-| Priority handling | — |
-| Rate limiting | — |
-| Retry policy | — |
+| Queue growth strategy | **Events** are acknowledged only once in Kafka, which stores them on disk (retention-bound, not memory-bound), so a burst becomes consumer lag. **Investigations** wait in PostgreSQL as `OPEN` rows, so a backlog costs disk, not RAM, and survives restarts. Both queues are metered (`queue_depth{queue="events"}` is consumer lag, `queue_depth{queue="investigations"}`) for alerting and autoscaling. |
+| Worker concurrency | Event consumers scale with Kafka partitions (one per partition in the consumer group; keying by `tenant:transaction` keeps per-transaction order). Investigation workers run `SENTINEL_WORKER_CONCURRENCY` (4) claim loops per process, times replicas. `SKIP LOCKED` lets any number claim without contention. |
+| Throttling | `POST /events` waits at most 5 s for the broker, then returns **503**, so a struggling broker pushes back to the sources instead of piling requests into the API. Workers block on the LLM rate limiter, so extra workers never mean extra LLM load. |
+| Priority handling | Priority is scored when the investigation is created: **CRITICAL** for a duplicate capture (customer charged twice) or ≥ 100,000; **HIGH** for high severity or ≥ 10,000; then MEDIUM and LOW. The claim query orders by priority, then age. During an incident's backlog, the critical cases reach the LLM first while LOW waits. |
+| Rate limiting | A shared **Redis token bucket** (atomic Lua script on the Redis server clock) caps LLM calls at `SENTINEL_LLM_RATE_PER_SECOND` (20) with burst 20 **across all workers**. If Redis fails, each process falls back to a local bucket at 25% of the rate. |
+| Retry policy | Transient LLM errors: the SDK retries twice with backoff. A failed step is requeued with **exponential backoff and jitter** (5 s × 2ⁿ⁻¹, capped at 300 s). The limit is 3 attempts, then `FAILED` plus a dead letter; human `retry` is available. Events: at-least-once redelivery from Kafka. Poison messages: dead-lettered, never retried in a loop. |
 
-**Proof:** —
+**Proof:**
+- `tests/integration/test_hardening.py::test_transient_llm_failures_are_retried_with_backoff`
+- `::test_exhausted_attempts_dead_letter_then_retry_recovers`
+- `tests/unit/test_ratelimit.py`, `tests/unit/test_priority.py`
+- Walkthrough `f`; the broker-outage 503 ([failure-injection.md](docs/failure-injection.md))
 
-**Details:** —
+**Details:** [`ai/ratelimit.py`](src/sentinel/ai/ratelimit.py),
+[`domain/priority.py`](src/sentinel/domain/priority.py),
+[`workflow/engine.py`](src/sentinel/workflow/engine.py).
+
+**Honest gap:** the baseline accepted 71.7 events/s on one API process ([Q15](#q15)).
+Reaching 10,000 events/s at the edge needs more API replicas, cached key lookups and
+more partitions; [Q21](#q21) lists these.
 
 ---
 
@@ -505,20 +574,42 @@ model fully obeys an injected document.
 Report: events/sec, p50/p95/p99 latency, queue depth, error rate, and the first
 bottleneck you encountered.*
 
-**Status:** Pending (Phase 10)
+**Status:** Answered (Phase 10). Baseline run `96f178`.
+
+**Setup:**
+- **Script:** [`scripts/load_generator.py`](scripts/load_generator.py).
+- **Volume:** 100,002 sends (95,235 unique events), 200 concurrent senders, two
+  tenants.
+- **Traffic mix:** realistic anomaly mix plus 5% duplicates, 10% out-of-order and 3%
+  delayed.
+- **Environment:** full compose stack on one 4 vCPU / 16 GB VM, mock LLM, a single
+  instance of each service, one Kafka partition.
 
 | Metric | Result |
 |---|---|
-| Events/sec | — |
-| p50 latency | — |
-| p95 latency | — |
-| p99 latency | — |
-| Peak queue depth | — |
-| Error rate | — |
+| Events/sec | **71.7 accepted/s** at the API; ~68 persisted/s behind it |
+| p50 latency | API **1.77 s**; end to end (sent → persisted) 2.7 s |
+| p95 latency | API **6.90 s**; end to end 7.53 s |
+| p99 latency | API **7.82 s**; end to end 8.72 s |
+| Peak queue depth | **5,483** events (Kafka lag); 26 investigations |
+| Error rate | **0.59%**: 594 connections without a response, 0 HTTP errors |
 
-**First bottleneck:** —
+**Correctness under load:** every event acknowledged with 202 was persisted exactly
+once, with 10,695 investigations. The events missing from the database are exactly the
+sends that never received a 202.
 
-**Details:** —
+**First bottleneck:** the **API ingest path**. A single uvicorn process ran at ~80% of a
+core, doing a PostgreSQL API-key lookup and waiting for the broker's `acks=all` on every
+request. The pipeline behind it kept up. The second bottleneck was the scheduler's full
+rescans of unfinished transactions (~70% CPU).
+
+**Fixes, identified and not yet applied:**
+- Cache key lookups.
+- Run several API workers or replicas.
+- Add Kafka partitions.
+- Give the scheduler a `next_check_at` index instead of rescanning ([Q20](#q20)).
+
+**Details:** [docs/load-test-report.md](docs/load-test-report.md)
 
 ---
 
@@ -552,18 +643,43 @@ and a restarted worker resumes at `RESULT_VERIFIED` without repeating the analys
 classification accuracy, citation correctness, unsupported claim rate. Bonus:
 retrieval precision/recall, model latency and estimated LLM cost.*
 
-**Status:** Pending (Phase 12)
+**Status:** Answered (Phase 12). Mock baseline measured; the OpenRouter run is done on
+the VPS with `make eval`.
+
+**Dataset:** [22 scenarios](eval/scenarios.json), producing 21 expected investigations.
+They cover:
+- healthy transactions;
+- fee-explained and unexplained settlement gaps;
+- an ambiguous fee;
+- missing and mismatched ledger entries;
+- duplicate captures;
+- missing settlement, including during a documented gateway incident;
+- refund mismatches;
+- adversarial knowledge-base content;
+- a transaction with two anomalies.
+
+**Method:** [`eval/run_eval.py`](eval/run_eval.py) runs each scenario end to end through
+the live stack: API, Kafka, rules, workflow, retrieval, LLM and grounding. It then
+scores the checkpoints. The model must pick its classification from a fixed list, which
+makes accuracy measurable.
 
 | Metric | Mock investigator | OpenRouter investigator |
 |---|---|---|
-| Classification accuracy | — | — |
-| Citation correctness | — | — |
-| Unsupported claim rate | — | — |
-| Retrieval precision / recall | — | — |
-| Model latency | — | — |
-| Estimated cost | — | — |
+| Classification accuracy | 85.7% (18/21) | see [eval-report](docs/eval-report.md) |
+| Citation correctness | 100% (45 facts) | ″ |
+| Unsupported claim rate | 0% | ″ |
+| Retrieval recall | 100% (15/15); adversarial docs quarantined 2/2 | same retrieval |
+| Model latency | n/a (workflow p50 0.52 s) | ″ |
+| Estimated cost | $0 | ″ |
 
-**Details:** —
+- **Detection:** 100% recall, 0 false positives.
+- **Mock misses:** the three cases needing judgement (a gross-settling gateway, a gap
+  that doesn't match the documented fee, and adversarial content). The mock labels all
+  three a fee deduction.
+- **Retrieval precision** isn't reported, because each scenario labels one relevant
+  document, so precision would mostly count other useful context as misses.
+
+**Details:** [docs/eval-report.md](docs/eval-report.md)
 
 ---
 
@@ -575,25 +691,65 @@ duplicate messages are handled, where idempotency is enforced, how races are
 handled, how crash recovery works, which operations require strong consistency,
 and which tolerate eventual consistency.*
 
-**Status:** Pending (Phase 12)
+**Status:** Answered
 
-**Why each component exists:** —
+**Why each component exists:**
+- **PostgreSQL + pgvector:** the single system of record. Constraints and transactions
+  carry the correctness guarantees. pgvector keeps the embeddings next to the tenant
+  data they're filtered by, instead of adding a second datastore to keep consistent.
+- **Redpanda (Kafka API):** a durable, replayable buffer between ingestion and
+  processing. It absorbs bursts, orders each transaction's events per partition, and
+  lets consumers scale by partition. Redpanda was chosen over Apache Kafka for its
+  single-binary footprint on the VPS; the client code is plain Kafka.
+- **Redis:** only the cross-worker LLM token bucket. It is safe to lose (local fallback)
+  and holds no business state.
+- **Separate API, consumer, scheduler and worker processes:** they scale and fail
+  independently. The LLM path can back up for hours without affecting ingestion.
+- **OpenRouter:** one OpenAI-compatible API for the model and embeddings, swappable by
+  configuration.
 
-**Duplicate messages:** —
+**Duplicate messages:** absorbed by `UNIQUE (tenant_id, event_id)`; the duplicate is a
+no-op ([Q1](#q1), [Q11](#q11)).
 
-**Where idempotency is enforced:** —
+**Where idempotency is enforced:** always in PostgreSQL:
+- the events unique key;
+- the findings unique key;
+- the partial unique index for active investigations;
+- the checkpoint unique key;
+- conditional `UPDATE`s for leases and reviews.
 
-**How races are handled:** —
+Never in Redis or in memory.
 
-**How crash recovery works:** —
+**How races are handled:**
+- Constraints for creation (two creators → one row).
+- `pg_advisory_xact_lock` so the consumer and scheduler never reconcile one transaction
+  concurrently.
+- `FOR UPDATE SKIP LOCKED` for claims.
+- Lease-checked checkpoints (a stale worker can't write).
+- Conditional updates for reviews (loser gets 409).
+
+**How crash recovery works:**
+- **Consumer:** redelivery of uncommitted offsets.
+- **Workers:** leases expire and the next claim resumes after the last checkpoint,
+  reusing any stored LLM result ([Q5](#q5)).
+- **Everything else:** stateless and restarted by Docker or Kubernetes.
 
 **Strong vs eventual consistency:**
 
 | Operation | Consistency | Why |
 |---|---|---|
-| — | — | — |
+| Event storage and idempotency | Strong (unique key, one transaction) | Double counting money is unacceptable |
+| Transaction state + findings + audit | Strong, atomic with the event | State, findings and audit must never disagree |
+| One active investigation | Strong (unique index) | Duplicate investigations waste reviewer time and LLM budget |
+| Claims, checkpoints, leases | Strong (row locks, conditional updates) | Two workers must never both own a job |
+| Human review decisions | Strong (conditional update) | A decision must be final and attributable |
+| `POST /events` → visible state | Eventual (seconds; p99 8.7 s under load) | Decoupling through Kafka is what absorbs bursts |
+| Cross-source reconciliation | Eventual (grace period and scheduler) | Sources report at different times; `PENDING` is the honest interim state |
+| Investigation report | Eventual (queue plus LLM) | Advisory, human-reviewed, priority-ordered |
+| Knowledge base index | Eventual (re-ingest) | Guidance, not financial truth |
+| Metrics, LLM rate limit | Approximate | Operational signals; Redis loss only loosens the limit |
 
-**Details:** —
+**Details:** [architecture.md](docs/architecture.md), [decisions.md](docs/decisions.md)
 
 ---
 
@@ -606,39 +762,80 @@ the LLM provider is unavailable, vector search is unavailable. Avoid vague
 statements such as "the system retries". Specify what is retried, where state is
 persisted, and why correctness remains intact.*
 
-**Status:** Pending (Phase 12)
+**Status:** Answered. PostgreSQL, broker and Redis outages verified on the compose
+stack.
 
 ### Worker crashes
-- **What is retried:** —
-- **Where state is persisted:** —
-- **Why correctness holds:** —
+- **What is retried:**
+  - Consumer: the Kafka messages after the last committed offset are redelivered.
+  - Investigation worker: after the lease (60 s) expires, the investigation is claimed
+    again and runs **only the steps without a checkpoint**.
+- **Where state is persisted:**
+  - Events, state and findings are in PostgreSQL, committed per event.
+  - Workflow progress is in `investigation_steps`, one committed row per step, including
+    the LLM's raw answer.
+- **Why correctness holds:**
+  - Redelivered events hit the unique key.
+  - A stale worker's writes are rejected by the lease check.
+  - Checkpointed steps (including a paid LLM call) never re-run.
 
 ### PostgreSQL temporarily unavailable
-- **What is retried:** —
-- **Where state is persisted:** —
-- **Why correctness holds:** —
+- **What is retried:**
+  - API requests get **503 + `Retry-After`**, and the client retries.
+  - The consumer exits without committing its offset and is restarted; its events are
+    re-consumed when PostgreSQL returns.
+  - Workers exit and restart; their leases expire and are reclaimed.
+  - The scheduler logs and retries next interval.
+- **Where state is persisted:** events accepted before the outage wait in Kafka.
+  Nothing is acknowledged that isn't durable somewhere.
+- **Why correctness holds:**
+  - No service keeps state outside PostgreSQL.
+  - Replays are idempotent.
+  - Verified: an event produced during the outage was stored 2 s after recovery.
 
 ### Redis unavailable
-- **What is retried:** —
-- **Where state is persisted:** —
-- **Why correctness holds:** —
+- **What is retried:** each LLM call's rate-limit check tries Redis and falls back to a
+  per-process bucket at 25% of the rate. Recovery to the shared bucket is automatic.
+- **Where state is persisted:** nothing business-relevant is in Redis. The checkpoint
+  records `limiter: local-fallback`.
+- **Why correctness holds:** Redis only shapes throughput; the worst case is a less
+  precise global rate.
 
 ### Message broker unavailable
-- **What is retried:** —
-- **Where state is persisted:** —
-- **Why correctness holds:** —
+- **What is retried:** `POST /events` returns **503 within 5 s**; the source system
+  retries. The consumer reconnects on its own.
+- **Where state is persisted:**
+  - Accepted events are in Kafka's log (on disk).
+  - Offsets are in the broker.
+  - Everything downstream is in PostgreSQL.
+- **Why correctness holds:**
+  - A 202 is only returned after `acks=all`.
+  - A 503'd event that was still delivered from the producer buffer is deduplicated when
+    the client retries.
+  - Workers, reviews and reads keep working from PostgreSQL.
 
 ### LLM provider unavailable
-- **What is retried:** —
-- **Where state is persisted:** —
-- **Why correctness holds:** —
+- **What is retried:**
+  - The SDK retries 429, 5xx and timeouts twice.
+  - The workflow then requeues the investigation with exponential backoff and jitter:
+    3 attempts, then `FAILED` plus a dead letter, with human `retry` available.
+  - Malformed output gets one repair round.
+- **Where state is persisted:** the checkpoints before the analysis step, and every
+  attempt's error in `investigations.errors` and `dead_letters`.
+- **Why correctness holds:** the LLM never changes financial state. Its outage delays
+  advisory reports only; findings and transaction state are unaffected.
 
 ### Vector search unavailable
-- **What is retried:** —
-- **Where state is persisted:** —
-- **Why correctness holds:** —
+- **What is retried:** nothing is retried at this point. If the query can't be embedded,
+  retrieval **degrades to full-text ranking** (still tenant-scoped) and the step records
+  `mode: "text-only"`. If PostgreSQL itself is down, the PostgreSQL case above applies.
+- **Where state is persisted:** the knowledge base is in PostgreSQL. Ingest is idempotent
+  by content hash and is simply re-run.
+- **Why correctness holds:** retrieval only adds context to an advisory report; tenant
+  filtering applies identically in degraded mode.
 
-**Details:** —
+**Details:** [docs/failure-model.md](docs/failure-model.md) (with proofs and the
+concurrency hazards), [docs/failure-injection.md](docs/failure-injection.md)
 
 ---
 
@@ -649,15 +846,69 @@ persisted, and why correctness remains intact.*
 implemented, what you simplified, what you deliberately omitted, and how you
 would productionize it.*
 
-**Status:** Pending (Phase 12)
+**Status:** Answered
 
-**Implemented:** —
+**Implemented:**
+- **Event path:** event ingestion via Kafka with durable idempotency. Order-independent
+  state, six reconciliation rules in a pluggable registry, and a scheduler for
+  time-based rules.
+- **Investigation workflow:** one active investigation per anomaly. A checkpointed
+  workflow with leases, heartbeats, crash and SIGTERM recovery, backoff, dead letters and
+  human retry.
+- **Knowledge and AI:**
+  - Hybrid tenant-scoped retrieval over a versioned knowledge base.
+  - An OpenRouter investigator with strict structured output, a fixed taxonomy,
+    citation enums, a repair round and evidence grounding.
+  - Layered prompt-injection defence.
+- **Access and review:** RBAC with tenant isolation, an audit trail, and review APIs
+  with conflict handling.
+- **Load handling:** a Redis LLM rate limiter with local fallback, and priority
+  scheduling.
+- **Operations:**
+  - JSON logs with `request_id` propagation, and the 11 required Prometheus metrics.
+  - Failure injection, a 100k-event load generator, and an end-to-end AI evaluation.
+  - Docker Compose (dev and VPS overlays), Kubernetes manifests, and CI (lint, types,
+    unit tests, a full-stack integration run, the walkthrough, and an image build).
 
-**Simplified:** —
+**Simplified:**
+- **Authentication:** API keys (hashed) instead of an identity provider. The
+  `Principal` abstraction is ready for OIDC or JWT.
+- **Kafka:** single-node Redpanda with one partition, and replication factor 1.
+- **Kubernetes:** PostgreSQL is external in the manifests (as the brief allows). There
+  is no HPA, Ingress or NetworkPolicy.
+- **Prompt-injection screening:** regex heuristics, backed by the other four layers.
+- **Offline defaults:** a deterministic "fake" embedder and a mock investigator, so
+  tests and CI run without a paid API. The real ones are one setting away.
+- **Rule thresholds** are global settings, not per-tenant configuration.
 
-**Deliberately omitted:** —
+**Deliberately omitted:**
+- **Performance work from the load test** (identified, measured, not applied):
+  - an API-key cache;
+  - several uvicorn workers or API replicas;
+  - more Kafka partitions;
+  - a scheduler `next_check_at` index to replace full rescans;
+  - a 10,000 events/s burst test.
 
-**How to productionize:** —
+  These were deprioritised to ship the complete feature set first.
+- **Observability extras:** distributed tracing (OpenTelemetry) and Grafana dashboards
+  and alerts. The metrics and structured logs they would build on exist.
+- **Product and data work:** a reviewer UI; data retention, archival and table
+  partitioning; per-tenant quotas; knowledge-base authoring and approval workflow.
+- **Transactional outbox:** not needed, because the API writes only to Kafka and
+  consumers only to PostgreSQL. No component writes to both.
+
+**How to productionize:**
+1. **Datastores.** Managed PostgreSQL with HA, PITR and PgBouncer. Kafka with 3+ brokers
+   and replication factor 3, partitions sized to peak throughput.
+2. **Scaling.** Apply the load-test fixes above. Add HPA on consumer lag and investigation
+   queue depth.
+3. **Identity and secrets.** OIDC for humans, mTLS or workload identity for source
+   systems. A secrets manager with rotation.
+4. **Operations.** OpenTelemetry traces, dashboards and SLO-based alerts on lag, queue
+   age, failure rate and dead letters. Runbooks for dead-letter replay.
+5. **Delivery.** CI pushes signed images, with staged rollouts and migration gating.
+6. **AI quality.** Run the evaluation suite in CI against the real model on a budget, and
+   gate prompt and model changes on it. Grow the dataset from reviewer decisions.
 
 ---
 
@@ -667,10 +918,47 @@ would productionize it.*
 **Spec §32:** *If this system had to process 1 billion transaction events per day,
 what are the first five architectural changes you would make, and why?*
 
-**Status:** Pending (Phase 12)
+**Status:** Answered
 
-1. —
-2. —
-3. —
-4. —
-5. —
+1 billion events a day is ~11,600 events/s on average, and plausibly ~50,000/s at peak.
+That is ~160× the measured single-process baseline. In order:
+
+1. **Take PostgreSQL off the ingest hot path.**
+   - **Why:** today every request does a key lookup and waits for `acks=all`, which was
+     the first bottleneck.
+   - **Change:** authenticate from an in-memory cache with a short TTL, or with
+     self-contained tokens or mTLS. Accept **batches** per request, and let high-volume
+     sources produce to Kafka directly under per-tenant ACLs.
+   - **Result:** the API becomes a thin, horizontally scaled, stateless validator.
+2. **Partition Kafka for the peak, and batch the consumer.**
+   - **Why:** one partition caps parallelism at one consumer.
+   - **Change:** run hundreds of partitions keyed by `tenant:transaction`, so
+     per-transaction order holds. Size the consumer group to match. Consume in batches:
+     one DB transaction per batch with a multi-row insert, then one state rebuild per
+     affected transaction.
+   - **Result:** far fewer round trips, with the same idempotency key.
+3. **Shard and partition the data.**
+   - **Change:** hash-shard by `tenant_id` (e.g. Citus, or a PostgreSQL cluster per
+     shard group). Every key already leads with it, and no query crosses tenants. Within
+     a shard, partition `events` and `audit_logs` by time, and move history older than N
+     days to object storage.
+   - **Result:** keeps hot tables and indexes in memory, and makes retention a cheap
+     partition drop.
+4. **Replace scheduler rescans with due-time scheduling.**
+   - **Change:** store `next_check_at` per transaction (the earliest grace or settlement
+     deadline). Index it, or use a delay queue, so only due transactions are re-checked.
+   - **Result:** at this volume, rescanning millions of `PENDING` transactions per
+     interval is impossible, while the due set per second is small.
+5. **Make the investigation path proportional to incidents, not events.**
+   - **Why:** at 1B/day even a 1% anomaly rate is 10M investigations a day. That is
+     impossible for 20 LLM calls/s, or for human reviewers.
+   - **Changes:**
+     - Resolve known patterns deterministically (e.g. a gap exactly equal to the
+       documented fee closes automatically with an audit entry).
+     - **Cluster correlated anomalies** into one incident investigation (same gateway,
+       same window, same cause).
+     - Use per-tenant fair-share queues and LLM budgets.
+     - Send only the novel or high-value remainder to the model.
+
+**Details:** [load-test-report.md](docs/load-test-report.md) for the measured
+bottlenecks these changes address.

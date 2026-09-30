@@ -26,7 +26,7 @@ def wait_for_events(
         time.sleep(0.25)
 
 
-def test_event_is_stored_once_even_if_sent_twice(client: httpx.Client) -> None:
+def test_same_event_sent_ten_times_is_stored_once(client: httpx.Client) -> None:
     txn = f"txn_{uuid.uuid4().hex[:8]}"
     event = {
         "event_id": f"evt_{uuid.uuid4().hex[:8]}",
@@ -38,7 +38,7 @@ def test_event_is_stored_once_even_if_sent_twice(client: httpx.Client) -> None:
         "currency": "INR",
         "timestamp": "2026-09-29T10:30:00Z",
     }
-    for _ in range(2):
+    for _ in range(10):  # §24: send the same event 10 times
         assert client.post("/events", json=event).status_code == 202
 
     # A second, different event acts as a marker: once it is stored, the

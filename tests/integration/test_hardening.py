@@ -184,6 +184,25 @@ def test_transient_llm_failures_are_retried_with_backoff(client: httpx.Client) -
     assert all("RateLimitError" in e["error"] for e in inv["errors"])
 
 
+async def test_malformed_llm_output_leaves_no_trace_and_is_retried(client: httpx.Client) -> None:
+    # §24: the model returns invalid JSON. Nothing from that attempt may be persisted: no
+    # analysis checkpoint, no report, and the transaction and finding stay as they were.
+    txn = mismatch(client, {"llm_fault": "malformed", "llm_fault_calls": 1})
+    inv = wait_for(
+        lambda: investigation(client, txn),
+        lambda i: i is not None and i["status"] == "AWAITING_REVIEW",
+    )
+    assert inv["attempts"] == 2
+    assert "ReportFormatError" in inv["errors"][0]["error"]
+    analysis = await _step_row(inv["id"], "AI_ANALYSIS_COMPLETED")
+    assert analysis["attempt"] == 2  # the malformed attempt checkpointed nothing
+    state = client.get(f"/transactions/{txn}").json()
+    assert state["state"] == "DISCREPANCY"
+    assert [(f["anomaly_type"], f["status"]) for f in state["findings"]] == [
+        ("SETTLEMENT_MISMATCH", "OPEN")
+    ]
+
+
 def test_exhausted_attempts_dead_letter_then_retry_recovers(
     client: httpx.Client, client_for: Callable[[str, str], httpx.Client]
 ) -> None:
@@ -206,6 +225,18 @@ def test_exhausted_attempts_dead_letter_then_retry_recovers(
 
 
 # --- §18: prompt injection -----------------------------------------------------------
+
+
+async def _step_row(investigation_id: str, step: str) -> dict[str, Any]:
+    async with db() as sessions, sessions() as s:
+        row = await s.execute(
+            text(
+                "select attempt, output from investigation_steps"
+                " where investigation_id = :i and step = :s"
+            ),
+            {"i": investigation_id, "s": step},
+        )
+        return dict(row.mappings().one())
 
 
 async def _step_output(investigation_id: str, step: str) -> dict[str, Any]:

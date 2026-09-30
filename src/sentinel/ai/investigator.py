@@ -59,7 +59,7 @@ class MockInvestigator:
     """Deterministic, offline investigator: same input, same report. No network."""
 
     async def analyze(self, data: InvestigationInput) -> AnalysisResult:
-        await _dev_delay(data)
+        await dev_delay(data)
         if _dev_flag(data, "mock_obey_injection"):
             return _compromised_report(data)
         classification, hypothesis, action = _PLAYBOOK.get(
@@ -85,9 +85,9 @@ class MockInvestigator:
         return AnalysisResult(report=report, meta={"model": "mock"})
 
 
-async def _dev_delay(data: InvestigationInput) -> None:
-    """Dev/test only: `metadata.mock_llm_delay_seconds` makes the mock slow, so a worker can
-    be stopped while an analysis is in flight (graceful-shutdown demo)."""
+async def dev_delay(data: InvestigationInput) -> None:
+    """Dev/test only: `metadata.mock_llm_delay_seconds` makes the analysis slow (with either
+    investigator), so a worker can be stopped or killed while it is in flight (demos)."""
     if not get_settings().allow_fault_injection:
         return
     for event in data.events:

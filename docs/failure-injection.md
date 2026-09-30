@@ -14,8 +14,8 @@ consumer and investigation worker. They are ignored everywhere else.
 | `FAIL_AFTER_STEP=<STEP>` on the worker | Hard-kills the worker (`os._exit`) right after that step's checkpoint commits, on each investigation's **first** attempt, so a restarted worker recovers even with the variable still set | `scripts/walkthrough.sh d2` |
 | `FAIL_AFTER_STEP=LLM_RESPONSE` | Kills the worker after the LLM answered but **before** the answer is committed (the spec's mandatory scenario) | `test_workflow.py::test_crash_after_llm_response_before_checkpoint`, walkthrough `d1` |
 | event `metadata.fail_after_step` | Same, for one investigation only | `test_workflow.py` |
-| `docker compose stop investigation-worker` | SIGTERM: the step in flight finishes and is checkpointed, the lease is released | walkthrough `s` (`metadata.mock_llm_delay_seconds` slows the mock so the stop lands mid-analysis) |
-| `docker compose kill investigation-worker` | SIGKILL: the lease expires and another worker resumes from the last checkpoint | [`failure-model.md`](failure-model.md) |
+| `docker compose stop investigation-worker` | SIGTERM: the step in flight finishes and is checkpointed, the lease is released | walkthrough `s` (`metadata.mock_llm_delay_seconds` slows the analysis so the stop lands mid-step) |
+| `docker compose kill investigation-worker` | SIGKILL: the lease expires and another worker resumes from the last checkpoint | `make demo` (part 2), [`failure-model.md`](failure-model.md) |
 
 Valid steps: `STARTED`, `TRANSACTION_DATA_COLLECTED`, `RELATED_EVENTS_COLLECTED`,
 `KNOWLEDGE_RETRIEVED`, `AI_ANALYSIS_COMPLETED`, `RESULT_VERIFIED`, `COMPLETED`, plus

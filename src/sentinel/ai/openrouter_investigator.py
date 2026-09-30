@@ -7,6 +7,7 @@ from typing import Any, cast
 import httpx2
 from openai import AsyncOpenAI
 
+from sentinel.ai.investigator import dev_delay
 from sentinel.ai.prompts import build_messages
 from sentinel.ai.schemas import (
     AnalysisResult,
@@ -67,6 +68,7 @@ class OpenRouterInvestigator:
         )
 
     async def analyze(self, data: InvestigationInput) -> AnalysisResult:
+        await dev_delay(data)
         messages: list[dict[str, Any]] = list(build_messages(data))
         usage = {"prompt_tokens": 0, "completion_tokens": 0}
         started = time.monotonic()

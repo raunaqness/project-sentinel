@@ -207,23 +207,29 @@ Verified on the VPS with `openai/gpt-4o-mini` and OpenRouter embeddings: 5/5 fac
 
 ### Phase 10 — Observability, Load & Failure Injection (§19–§21)
 
-- [ ] `/metrics` with all required metrics (JSON logs already in place since Phase 3)
-- [ ] Load generator (100k+ events), run off the VPS; `docs/load-test-report.md`
+- [x] `/metrics` with all 11 required metrics on the API and every worker (JSON logs
+      since Phase 3); `request_id` propagated through Kafka
+- [x] Load generator (100k+ events); baseline run and `docs/load-test-report.md`
+- [x] `docs/failure-injection.md`; PostgreSQL, broker and Redis outages verified
+- [ ] Performance fixes from the load test (API-key cache, several API workers, more
+      partitions, scheduler `next_check_at`) and a 10k events/s burst test — *skipped to
+      ship the full feature set; documented in ASSIGNMENT_ANSWERS Q15/Q20*
 
 ### Phase 11 — Kubernetes & CI (§22–§23)
 
-- [ ] Dockerfile hardening (multi-stage, non-root)
-- [ ] Kubernetes manifests: probes, requests/limits, config/secrets
-- [ ] CI: lint → unit → integration → container build
-- [ ] `docs/deployment-vps.md` + README "Deploy to a VPS" section
+- [x] Dockerfile: slim base, non-root user (UID 10001) — single stage, kept lean
+- [x] Kubernetes manifests: probes, requests/limits, config/secrets (kustomize)
+- [x] CI: lint → types → unit → integration + walkthrough → container build
+- [x] VPS deployment via the compose VPS overlay (README → Deployment)
 
 ### Phase 12 — Tests, Evaluation, Docs & Demo (§24–§32)
 
-- [ ] All 7 mandatory tests present and passing
-- [ ] 20+ eval scenarios + `docs/eval-report.md`
-- [ ] `scripts/demo.sh` and `scripts/crash_demo.sh`
-- [ ] `docs/architecture.md`, `docs/failure-model.md`, `docs/security.md`
-- [ ] Implemented / simplified / omitted section; 1B events/day section
+- [x] All 7 mandatory tests present and passing (README → Running Tests)
+- [x] 22 eval scenarios, runner and `docs/eval-report.md` (mock baseline; real model via
+      `make eval`)
+- [x] Demo: `make demo` (§30 flow including worker kill and recovery)
+- [x] `docs/architecture.md`, `docs/failure-model.md`, `docs/security.md`
+- [x] Implemented / simplified / omitted section; 1B events/day section
 
 ## Answers Map
 

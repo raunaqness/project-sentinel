@@ -14,7 +14,7 @@
 #   k    knowledge base (§10)                -> tenant isolation, filters, cited guidance
 #   ai   AI report (§11)                     -> grounded report, verification, model usage
 #   s    graceful shutdown (§22.3)           -> SIGTERM mid-analysis: step finishes, lease
-#                                              released, another start resumes (mock only)
+#                                              released, another start resumes
 #   r    human review (§12)                  -> approve, conflicting review 409, retry
 #   t    tenant isolation + RBAC (§13)       -> other tenant 404, roles enforced server-side
 #   q    commit-then-crash before ack (§15)  -> consumer killed after DB commit; redelivery
@@ -26,6 +26,7 @@
 #   obs  observability (§19)                 -> every required metric exposed; request_id
 #                                              traced from the API into the consumer
 #   look audit trail, JSON logs and DB rows for the transactions of this run
+#   demo the §30 demo flow, narrated step by step (`make demo`; not in the default run)
 #
 # Needs: curl, jq, docker compose, and API keys in .api-keys.json (`make seed`).
 # Scenarios c, d1 and s need docker-compose.dev.yml in COMPOSE_FILE (2s grace period,
@@ -231,6 +232,58 @@ scenario_s() {
   wait_for 30 sh -c "curl -s -H 'X-API-Key: $ADMIN_KEY' '$API/investigations?transaction_id=$t' | jq -e '.[] | select(.status==\"AWAITING_REVIEW\")'"
   expect "completed after restart" "$(invs "$t" | jq -r '.[0].status')" AWAITING_REVIEW
   expect "analysis not repeated" "$(invs "$t" | jq -r '.[0].llm_requests')" 1
+}
+
+scenario_demo() {
+  header "DEMO (§30) part 1: events → mismatch → investigation → knowledge → AI report → evidence → approve"
+  local t=txn_DEMO_$RUN
+  echo; echo "1. Create a transaction: payment 10,000 INR via Gateway Alpha, ledger 10,000, bank settles 9,950"
+  ev "$t" "evt_DEMO_p_$RUN" PAYMENT_GATEWAY PAYMENT_CAPTURED 10000 '{"gateway": "GATEWAY_ALPHA"}'
+  ev "$t" "evt_DEMO_l_$RUN" LEDGER LEDGER_POSTED 10000
+  ev "$t" "evt_DEMO_s_$RUN" BANK_SETTLEMENT SETTLEMENT_RECEIVED 9950
+  wait_for 120 sh -c "curl -s -H 'X-API-Key: $ADMIN_KEY' '$API/investigations?transaction_id=$t' | jq -e '.[] | select(.status==\"AWAITING_REVIEW\")'"
+  echo; echo "2. Mismatch detected by the deterministic reconciliation rules"
+  txn "$t" | jq -c '{state, payment_amount, ledger_amount, settlement_amount}' | sed 's/^/   /'
+  txn "$t" | jq -c '.findings[] | {anomaly_type, status, details}' | sed 's/^/   /'
+  expect "state" "$(txn "$t" | jq -r .state)" DISCREPANCY
+  echo; echo "3. Investigation created (one per tenant + transaction + anomaly) and run by a worker"
+  local id; id=$(invs "$t" | jq -r '.[0].id')
+  api "/investigations/$id" | jq -c '{id, anomaly_type, priority, status, steps: [.steps[].step]}' | sed 's/^/   /'
+  echo; echo "4. Knowledge retrieved (tenant-scoped hybrid search), from the workflow checkpoint"
+  psql_q "select output from investigation_steps where investigation_id='$id' and step='KNOWLEDGE_RETRIEVED'" \
+    | jq -c '{mode, gateway, quarantined: [.quarantined[].doc_key]}, (.chunks[] | {chunk_id, doc_key, scope})' | sed 's/^/   /'
+  echo; echo "5. AI report (model output after evidence grounding)"
+  api "/investigations/$id" | jq '.report | {classification, confidence, summary, recommended_action, requires_human_review}' | sed 's/^/   /'
+  echo; echo "6. Evidence: each fact cites an event or knowledge chunk; unsupported claims are demoted"
+  api "/investigations/$id" | jq -c '.report.facts[] | {source, claim}' | sed 's/^/   /'
+  api "/investigations/$id" | jq -c '.report | {hypotheses, verification: (.verification | {facts_total, facts_supported, model_confidence})}' | sed 's/^/   /'
+  echo; echo "7. Human review: an INVESTIGATOR approves"
+  expect "approve" "$(post_as INVESTIGATOR "/investigations/$id/approve" '{"comment":"0.5% MDR per fee agreement"}')" 200
+  api "/investigations/$id" | jq -c '{status, reviewed_by, reviewed_at, review_comment}' | sed 's/^/   /'
+
+  header "DEMO (§30) part 2: second investigation, worker killed during processing, recovery"
+  local t2=txn_DEMO2_$RUN
+  echo; echo "1. Second mismatch; the analysis is slowed to 8 s so the kill lands mid-step"
+  ev "$t2" "evt_DEMO2_p_$RUN" PAYMENT_GATEWAY PAYMENT_CAPTURED 20000 '{"gateway": "GATEWAY_ALPHA", "mock_llm_delay_seconds": 8}'
+  ev "$t2" "evt_DEMO2_l_$RUN" LEDGER LEDGER_POSTED 20000
+  ev "$t2" "evt_DEMO2_s_$RUN" BANK_SETTLEMENT SETTLEMENT_RECEIVED 19900
+  wait_for 60 sh -c "curl -s -H 'X-API-Key: $ADMIN_KEY' '$API/investigations?transaction_id=$t2' | jq -e '.[] | select(.current_step==\"KNOWLEDGE_RETRIEVED\" and .status==\"IN_PROGRESS\")'"
+  local id2; id2=$(invs "$t2" | jq -r '.[0].id')
+  echo; echo "2. AI analysis in flight — killing the worker (SIGKILL, no chance to clean up)"
+  psql_q "select status, current_step, lease_owner from investigations where id='$id2'" | sed 's/^/   before: /'
+  docker compose kill investigation-worker >/dev/null 2>&1
+  psql_q "select status, current_step, lease_owner, lease_expires_at from investigations where id='$id2'" | sed 's/^/   after kill: /'
+  echo; echo "3. Restarting the worker: it waits for the dead worker's lease to expire, then resumes"
+  docker compose start investigation-worker >/dev/null 2>&1
+  wait_for 90 sh -c "curl -s -H 'X-API-Key: $ADMIN_KEY' '$API/investigations/$id2' | jq -e 'select(.status==\"AWAITING_REVIEW\")'"
+  api "/investigations/$id2" | jq -c '{status, attempts, llm_requests, steps: [.steps[] | "\(.step)#\(.attempt)"]}' | sed 's/^/   /'
+  echo "   (steps #1 were checkpointed before the kill and reused; only the interrupted analysis ran"
+  echo "    again, so llm_requests is 2: the killed call never returned a result)"
+  expect "recovered" "$(api "/investigations/$id2" | jq -r .status)" AWAITING_REVIEW
+  expect "second attempt" "$(api "/investigations/$id2" | jq -r .attempts)" 2
+  expect "every step checkpointed once" "$(api "/investigations/$id2" | jq '.steps | length')" 7
+  echo "   audit trail:"
+  api "/audit-logs?entity_id=$id2" | jq -r '.[] | [.created_at, .actor, .action] | @tsv' | sed 's/^/     /'
 }
 
 mismatch() {  # mismatch <txn> [metadata] [final-status]: send a settlement mismatch, wait
