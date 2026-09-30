@@ -1,0 +1,38 @@
+# Replicas beyond the topic's partition count sit idle (Kafka assigns one consumer per partition).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: event-consumer }
+  template:
+    metadata:
+      labels: { app: event-consumer }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: /metrics
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: event-consumer
+          image: sentinel
+          command: ["python", "-m", "sentinel.workers.event_consumer"]
+          ports: [{ containerPort: 9100, name: metrics }]
+          envFrom:
+            - configMapRef: { name: sentinel-config }
+            - secretRef: { name: sentinel-secrets }
+          securityContext: { allowPrivilegeEscalation: false }
+          readinessProbe:
+            httpGet: { path: /metrics, port: metrics }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /metrics, port: metrics }
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 250m, memory: 128Mi }
+            limits: { cpu: "1", memory: 256Mi }

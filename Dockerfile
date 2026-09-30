@@ -19,8 +19,8 @@ COPY src ./src
 COPY knowledge_base ./knowledge_base
 RUN uv sync --frozen --no-dev
 
-RUN useradd --system --no-create-home app
-USER app
+RUN useradd --system --uid 10001 --no-create-home app
+USER 10001
 
 EXPOSE 8000
 # Access logging is done by the app (JSON, with request_id), so uvicorn's is off.

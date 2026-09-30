@@ -1,0 +1,43 @@
+# One-shot jobs. Apply order is not guaranteed by Kubernetes: services started before the
+# migration finishes simply fail readiness / restart until the schema exists.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sentinel-migrate
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: migrate
+          image: sentinel
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef: { name: sentinel-config }
+            - secretRef: { name: sentinel-secrets }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sentinel-kb-ingest
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: kb-ingest
+          image: sentinel
+          command: ["python", "-m", "sentinel.retrieval.indexer"]
+          envFrom:
+            - configMapRef: { name: sentinel-config }
+            - secretRef: { name: sentinel-secrets }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }

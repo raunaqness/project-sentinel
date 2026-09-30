@@ -1,0 +1,38 @@
+# SIGTERM: finish the step in flight and release the lease (grace period covers one LLM call). Scale horizontally; the shared Redis token bucket keeps total LLM calls under the provider limit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: investigation-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: investigation-worker }
+  template:
+    metadata:
+      labels: { app: investigation-worker }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        prometheus.io/path: /metrics
+    spec:
+      terminationGracePeriodSeconds: 60
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: investigation-worker
+          image: sentinel
+          command: ["python", "-m", "sentinel.workers.investigation_worker"]
+          ports: [{ containerPort: 9100, name: metrics }]
+          envFrom:
+            - configMapRef: { name: sentinel-config }
+            - secretRef: { name: sentinel-secrets }
+          securityContext: { allowPrivilegeEscalation: false }
+          readinessProbe:
+            httpGet: { path: /metrics, port: metrics }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /metrics, port: metrics }
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 250m, memory: 192Mi }
+            limits: { cpu: "1", memory: 384Mi }
