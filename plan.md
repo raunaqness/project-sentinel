@@ -1,22 +1,17 @@
 # Project Sentinel — Build Plan
 
 Production-grade AI transaction investigation platform (M37 Labs take-home).
-This file is the working plan. Each phase ends with passing tests, updated docs,
-and the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) filled in.
+This is the phased build plan. Each phase ended with passing tests, updated docs, and
+the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) filled in.
 
-## Working Agreement
+## Principles
 
-- No file is created or changed without explicit approval.
-- Every approved change is committed and pushed immediately, so no work is lost.
-- A phase is "done" only when its exit criteria pass and its answers are written.
-- Answers in `ASSIGNMENT_ANSWERS.md` describe what is built, never what is planned.
-- From Phase 1 on, every completed phase leaves `docker compose up` running the full
-  system built so far, verifiable on the VPS.
-- Build one feature at a time, in the order of the assignment brief. Get each feature
-  working end to end with sensible defaults first; concurrency and failure hardening
-  come in Phase 9.
-- Zero-cost safeguards go in from day one: `tenant_id` on every table, durable unique
-  keys, exact decimal amounts, broker offsets committed after the DB commit.
+- Build one feature at a time, in the order of the assignment brief. Each works end to
+  end with sensible defaults first; concurrency and failure hardening follow in Phase 9.
+- A phase is done only when its tests pass, `docker compose up` runs the full system
+  built so far, and its answers in `ASSIGNMENT_ANSWERS.md` describe what is built.
+- Correctness safeguards from day one: `tenant_id` on every table, durable unique keys,
+  exact decimal amounts, broker offsets committed after the DB commit.
 - Keep it lean: no layer or file without a present use.
 
 ## Tech Stack
@@ -39,8 +34,8 @@ and the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) fill
 
 The system is deployed with Docker Compose on a shared VPS after each phase.
 
-- **Host:** x86_64, 4 vCPU, 8 GB RAM — already ~5 GB used and swapping, so
-  Sentinel must stay within a hard memory budget.
+- **Host:** x86_64, 4 vCPU, 8 GB RAM, shared with other services, so Sentinel must
+  stay within a hard memory budget.
 - **Ingress:** existing Cloudflare setup routes a subdomain to the API; only the
   API is ever reachable from outside. Postgres, Redis and Redpanda are never
   published (Docker bypasses `ufw`).
