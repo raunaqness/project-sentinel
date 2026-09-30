@@ -2,12 +2,16 @@
 
 Tenant isolation is not optional: `search` requires a tenant_id and every query it
 issues is restricted to that tenant's private documents plus global ones.
+
+If the query cannot be embedded (embedding provider down), search degrades to
+full-text ranking alone instead of failing, and reports that in `SearchResult.mode`.
 """
 
+import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +21,8 @@ from sentinel.retrieval.embeddings import Embedder
 
 CANDIDATES = 20  # per method, before fusion
 RRF_K = 60
+
+log = logging.getLogger("sentinel.retrieval")
 
 
 @dataclass(frozen=True)
@@ -31,6 +37,12 @@ class RetrievedChunk:
 
     def as_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    chunks: list[RetrievedChunk] = field(default_factory=list)
+    mode: Literal["hybrid", "text-only"] = "hybrid"
 
 
 def _scoped(
@@ -62,19 +74,28 @@ async def search(
     document_type: str | None = None,
     gateway: str | None = None,
     as_of: date | None = None,
-) -> list[RetrievedChunk]:
+) -> SearchResult:
     if not tenant_id:
         raise ValueError("tenant_id is required for retrieval")
     scope = (tenant_id, document_type, gateway, as_of)
 
-    [query_vector] = await embedder.embed([query])
-    by_vector = (
-        await session.scalars(
-            _scoped(select(DocumentChunk.id), *scope)
-            .order_by(DocumentChunk.embedding.cosine_distance(query_vector))
-            .limit(CANDIDATES)
+    mode: Literal["hybrid", "text-only"] = "hybrid"
+    by_vector: list[int] = []
+    try:
+        [query_vector] = await embedder.embed([query])
+    except Exception as error:  # provider outage: keyword ranking still works
+        mode = "text-only"
+        log.warning("query embedding failed; full-text search only", extra={"error": repr(error)})
+    else:
+        by_vector = list(
+            (
+                await session.scalars(
+                    _scoped(select(DocumentChunk.id), *scope)
+                    .order_by(DocumentChunk.embedding.cosine_distance(query_vector))
+                    .limit(CANDIDATES)
+                )
+            ).all()
         )
-    ).all()
 
     words = re.findall(r"[a-zA-Z0-9]+", query)
     by_text: list[int] = []
@@ -97,7 +118,7 @@ async def search(
             scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (RRF_K + rank + 1)
     top = sorted(scores, key=lambda cid: scores[cid], reverse=True)[:k]
     if not top:
-        return []
+        return SearchResult(mode=mode)
 
     rows = {
         c.id: (c, d)
@@ -109,7 +130,7 @@ async def search(
             )
         ).all()
     }
-    return [
+    chunks = [
         RetrievedChunk(
             chunk_id=f"chunk_{cid}",
             doc_key=rows[cid][1].doc_key,
@@ -121,3 +142,4 @@ async def search(
         )
         for cid in top
     ]
+    return SearchResult(chunks, mode)

@@ -21,7 +21,7 @@ async def search_knowledge(
     gateway: str | None = None,
     k: int = Query(default=5, ge=1, le=20),
 ) -> list[dict[str, Any]]:
-    chunks = await search(
+    result = await search(
         session,
         get_embedder(),
         tenant_id=principal.tenant_id,
@@ -30,4 +30,4 @@ async def search_knowledge(
         document_type=document_type,
         gateway=gateway,
     )
-    return [c.as_dict() for c in chunks]
+    return [c.as_dict() for c in result.chunks]

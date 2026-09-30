@@ -99,7 +99,7 @@ async def retrieve_knowledge(ctx: StepContext) -> dict[str, Any]:
     if get_settings().allow_fault_injection:  # dev/test: steer retrieval toward given text
         extra = next((e["metadata"].get("retrieval_extra_query") for e in events), None)
         query = f"{query} {extra}" if extra else query
-    chunks = await search(
+    result = await search(
         ctx.session,
         ctx.embedder,
         tenant_id=ctx.tenant_id,
@@ -108,7 +108,7 @@ async def retrieve_knowledge(ctx: StepContext) -> dict[str, Any]:
         gateway=gateway,
     )
     kept, quarantined = [], []
-    for chunk in chunks:
+    for chunk in result.chunks:
         signals = injection_signals(chunk.content)
         if signals:
             quarantined.append(
@@ -116,7 +116,13 @@ async def retrieve_knowledge(ctx: StepContext) -> dict[str, Any]:
             )
         else:
             kept.append(chunk.as_dict())
-    return {"query": query, "gateway": gateway, "chunks": kept, "quarantined": quarantined}
+    return {
+        "query": query,
+        "gateway": gateway,
+        "mode": result.mode,  # "text-only" while the embedding provider is unavailable
+        "chunks": kept,
+        "quarantined": quarantined,
+    }
 
 
 async def analyze(ctx: StepContext) -> dict[str, Any]:

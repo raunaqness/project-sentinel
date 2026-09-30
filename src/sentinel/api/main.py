@@ -7,7 +7,9 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from sentinel import __version__
 from sentinel.api.routes import (
@@ -46,6 +48,18 @@ app.include_router(investigations.router)
 app.include_router(knowledge.router)
 app.include_router(audit.router)
 app.include_router(dead_letters.router)
+
+
+@app.exception_handler(OSError)
+@app.exception_handler(OperationalError)
+@app.exception_handler(InterfaceError)
+async def database_unavailable(request: Request, exc: Exception) -> Response:
+    """PostgreSQL unreachable (every authenticated request looks up its API key there):
+    answer a retryable 503 instead of a 500."""
+    log.error("database unavailable", extra={"error": f"{type(exc).__name__}: {exc}"[:300]})
+    return JSONResponse(
+        {"detail": "database unavailable"}, status_code=503, headers={"Retry-After": "5"}
+    )
 
 
 @app.middleware("http")

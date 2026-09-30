@@ -9,6 +9,10 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from sentinel.config import get_settings
+from sentinel.retrieval.search import search as hybrid_search
 
 pytestmark = pytest.mark.integration
 
@@ -89,3 +93,27 @@ def test_investigation_uses_and_cites_knowledge(client: httpx.Client) -> None:
     report = rows[0]["report"]
     cited = [f["source"] for f in report["facts"] if f["source"].startswith("chunk_")]
     assert cited, report
+
+
+class _DownEmbedder:
+    name = "down"
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        raise httpx.ConnectError("embedding provider unreachable")
+
+
+async def test_embedding_outage_degrades_to_full_text_search() -> None:
+    engine = create_async_engine(str(get_settings().database_url))
+    try:
+        async with async_sessionmaker(engine)() as session:
+            result = await hybrid_search(
+                session,
+                _DownEmbedder(),
+                tenant_id="merchant_123",
+                query="merchant discount rate deducted at settlement",
+            )
+    finally:
+        await engine.dispose()
+    assert result.mode == "text-only"
+    assert "merchant-123-fee-agreement" in {c.doc_key for c in result.chunks}
+    assert all(c.scope in ("merchant_123", "global") for c in result.chunks)  # still scoped
