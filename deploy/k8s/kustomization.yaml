@@ -19,5 +19,5 @@ labels:
       app.kubernetes.io/part-of: sentinel
 images:
   - name: sentinel
-    newName: ghcr.io/raunaqness/project-sentinel  # built by CI; override per environment
+    newName: ghcr.io/raunaqness/project-sentinel  # push your build here, or override per environment
     newTag: latest

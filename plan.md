@@ -31,7 +31,7 @@ and the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) fill
 | Workflow | DB-backed state machine, leases + heartbeats, `FOR UPDATE SKIP LOCKED` | Explicit, demonstrable crash recovery |
 | Cache / rate limiting | Redis | Token bucket for LLM throughput; never used for correctness |
 | LLM | OpenRouter via OpenAI SDK (`base_url` override) | Provider-agnostic; model is config |
-| Embeddings | OpenRouter embeddings API (model TBC in Phase 6) | Behind `Embedder` interface; `FakeEmbedder` for tests |
+| Embeddings | OpenRouter embeddings API (`text-embedding-3-small`) | Behind `Embedder` interface; `FakeEmbedder` for tests |
 | Tooling | uv, ruff, mypy, pytest, Alembic | Integration tests run against the compose stack |
 | Delivery | Docker Compose, Kubernetes (kustomize), GitHub Actions | |
 

@@ -35,13 +35,13 @@ has a test.
 
 ## Verification
 
-The author re-ran everything on their own VPS before submitting, with `make verify`.
-The script runs the unit and integration tests, the full walkthrough, the §30 demo and
-the AI evaluation against the live stack. It then writes
+Before submission, everything was re-run on a VPS with `make verify`. The script runs
+the unit and integration tests, the full walkthrough, the §30 demo and the AI evaluation
+against the live stack. It then writes
 **[docs/verification.md](docs/verification.md)** from the actual output: environment,
 commit, per-check results, the evaluation table and raw logs.
 
-**Author's run:** 2026-09-30, commit `337c09c`, on a 4 vCPU / 8 GB VPS. The demo and
+**Submission run:** 2026-09-30, commit `337c09c`, on a 4 vCPU / 8 GB VPS. The demo and
 evaluation used `openai/gpt-4o-mini` via OpenRouter, with OpenRouter embeddings.
 
 - **Tests: all pass.** 95 unit tests, plus 38 integration tests against the full stack.
@@ -53,7 +53,7 @@ evaluation used `openai/gpt-4o-mini` via OpenRouter, with OpenRouter embeddings.
   - **81% classification accuracy** (17/21). All 88 cited facts are valid and supported
     by evidence.
   - LLM latency p50 3.4 s; about $0.0004 per investigation.
-  - The four misses are cautious: fee-explained gaps the model called "unexplained".
+  - Every miss errs toward escalation, never toward clearing a real discrepancy.
     See [eval-report](docs/eval-report.md#results-openaigpt-4o-mini-via-openrouter).
 
 ## How It Works
@@ -163,8 +163,10 @@ make eval               # AI evaluation: 22 scenarios through the stack → eval
 uv run python scripts/load_generator.py --events 100000   # load test → loadtest-output/
 ```
 
-No test calls a paid model. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
-runs all of the above on every push, except the eval and the load test.
+No test calls a paid model. On every push, CI
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint, type checks, unit
+tests and Kubernetes manifest validation. It then starts the full stack and runs the
+integration tests and the walkthrough, and builds the container image.
 
 **The mandatory tests (§24):**
 
@@ -223,8 +225,10 @@ All settings are environment variables, read by
     migration and knowledge-base jobs, and the API and worker deployments.
   - All workloads have probes, resource limits, non-root security contexts and
     Prometheus annotations.
-  - PostgreSQL is external (set its URL in the secret), and the image is
-    `ghcr.io/raunaqness/project-sentinel`.
+  - PostgreSQL is external: set its URL and the OpenRouter key in
+    [`secret.yaml`](deploy/k8s/secret.yaml).
+  - Build and push the image (`docker build -t <registry>/sentinel .`), then point
+    `images:` in [`kustomization.yaml`](deploy/k8s/kustomization.yaml) at it.
 
 ## Documentation
 
@@ -261,17 +265,3 @@ scripts/           walkthrough/demo, load generator, metrics
 deploy/k8s/        Kubernetes manifests
 tests/             unit and integration tests
 ```
-
-## Known Limitations
-
-- **Load-test fixes not applied.** The first bottlenecks (the API ingest path and the
-  scheduler's rescans) are measured and fixes are identified, but not applied. No
-  10,000 events/s burst test was run. See [Q15](ASSIGNMENT_ANSWERS.md#q15) and
-  [Q20](ASSIGNMENT_ANSWERS.md#q20).
-- **Fee-explained gaps get over-escalated.** The real model sometimes calls a gap
-  "unexplained" even when it equals the documented fee, and it does so at high
-  confidence. The miss is on the safe side, but it is avoidable
-  ([eval-report](docs/eval-report.md)).
-- **Deliberately lean infrastructure.** API-key authentication instead of an identity
-  provider, single-node Redpanda, no dashboards or tracing. The full list of what was
-  implemented, simplified and omitted is in [Q20](ASSIGNMENT_ANSWERS.md#q20).

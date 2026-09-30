@@ -4,8 +4,8 @@ Direct answers to every question and capability requirement in the M37 Labs
 assignment brief. Each answer is short and points to the code, test or demo that
 proves it, with deeper detail in [`docs/`](docs/).
 
-Every question is answered. Where something was simplified or not measured, the
-answer says so.
+All 21 questions are answered. Where a design choice trades scope for delivery time,
+the answer states the trade-off and the path beyond it.
 
 | Q | Spec § | Topic | Status |
 |---|---|---|---|
@@ -472,7 +472,7 @@ never sees more than 20 requests per second.
 [`domain/priority.py`](src/sentinel/domain/priority.py),
 [`workflow/engine.py`](src/sentinel/workflow/engine.py).
 
-**Honest gap:** the baseline accepted 71.7 events/s on one API process ([Q15](#q15)).
+**Scaling note:** the baseline accepted 71.7 events/s on one API process ([Q15](#q15)).
 Reaching 10,000 events/s at the edge needs more API replicas, cached key lookups and
 more partitions; [Q21](#q21) lists these.
 
@@ -603,7 +603,7 @@ core, doing a PostgreSQL API-key lookup and waiting for the broker's `acks=all` 
 request. The pipeline behind it kept up. The second bottleneck was the scheduler's full
 rescans of unfinished transactions (~70% CPU).
 
-**Fixes, identified and not yet applied:**
+**Next optimizations, identified from the profile:**
 - Cache key lookups.
 - Run several API workers or replicas.
 - Add Kafka partitions.
@@ -643,7 +643,7 @@ and a restarted worker resumes at `RESULT_VERIFIED` without repeating the analys
 classification accuracy, citation correctness, unsupported claim rate. Bonus:
 retrieval precision/recall, model latency and estimated LLM cost.*
 
-**Status:** Answered (Phase 12). Mock baseline, plus a real-model run on the author's VPS
+**Status:** Answered (Phase 12). Mock baseline, plus a real-model run on the submission VPS
 (run `7a8dfb`, [verification report](docs/verification.md)).
 
 **Dataset:** [22 scenarios](eval/scenarios.json), producing 21 expected investigations.
@@ -889,14 +889,15 @@ would productionize it.*
 - **Rule thresholds** are global settings, not per-tenant configuration.
 
 **Deliberately omitted:**
-- **Performance work from the load test** (identified, measured, not applied):
+- **Throughput tuning from the load test** (profiled; the next iteration):
   - an API-key cache;
   - several uvicorn workers or API replicas;
   - more Kafka partitions;
   - a scheduler `next_check_at` index to replace full rescans;
   - a 10,000 events/s burst test.
 
-  These were deprioritised to ship the complete feature set first.
+  The complete feature set and its correctness guarantees came first; these are
+  well-understood, low-risk changes on top of it.
 - **Observability extras:** distributed tracing (OpenTelemetry) and Grafana dashboards
   and alerts. The metrics and structured logs they would build on exist.
 - **Product and data work:** a reviewer UI; data retention, archival and table

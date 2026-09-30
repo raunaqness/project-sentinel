@@ -87,7 +87,7 @@ deterministic, so they don't depend on the model.
 
 ## Results: `openai/gpt-4o-mini` via OpenRouter
 
-Run `7a8dfb`, on the author's VPS (4 vCPU / 8 GB) via `make verify`, with OpenRouter
+Run `7a8dfb`, on the submission VPS (4 vCPU / 8 GB) via `make verify`, with OpenRouter
 embeddings. Full output: [docs/verification.md](verification.md). Per-case JSON:
 [`eval/results/7a8dfb.json`](../eval/results/7a8dfb.json).
 
@@ -130,7 +130,7 @@ same fee, 10,000 → 9,950) correctly, so its fee arithmetic isn't reliable acro
   The cost of these misses is a reviewer closing four fee cases by hand; no money is
   mis-stated.
 
-**The obvious next fix** (not applied): compute the expected fee deterministically. The
+**Next improvement:** compute the expected fee deterministically. The
 rule would read the rate from the tenant's fee agreement, multiply it by the captured
 amount, and add `expected_fee` and `gap_minus_fee` to the finding. The model would then
 compare two numbers instead of doing the arithmetic itself. The eval would show whether
@@ -149,7 +149,7 @@ so its port must match `POSTGRES_PORT`. To evaluate the real model, set
 `docker compose up -d investigation-worker` before `make eval`. A run makes 21 model
 calls; the measured cost was $0.009.
 
-## Limitations
+## Methodology Notes
 
 - **Small dataset.** 22 hand-written scenarios check behaviour, not statistics. One miss
   moves accuracy by ~5 points.

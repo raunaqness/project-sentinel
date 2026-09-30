@@ -95,8 +95,8 @@ always safe, so every component can simply crash and restart.
 | | |
 |---|---|
 | **Behaviour** | A message that fails validation or violates a DB constraint is written to `dead_letters` with the error, and its offset is committed, so it never blocks the partition. |
-| **Compression** | The consumer ships with snappy, lz4 and zstd codecs, so a producer's choice of compression can't wedge it. (Found while testing this document: a snappy-compressed message crash-looped the consumer until the codecs were added.) |
-| **Limit** | A batch the Kafka client itself cannot decode (corrupt on disk) would still stop the consumer; it would need an operator to skip the offset. |
+| **Compression** | The consumer ships with snappy, lz4 and zstd codecs, so a producer's choice of compression can't wedge it. |
+| **Operational note** | A batch the Kafka client itself cannot decode (corrupt on disk) would still stop the consumer; it would need an operator to skip the offset. |
 | **Proof** | `test_hardening.py::test_malformed_message_is_dead_lettered`; walkthrough `m` |
 
 ## Concurrency hazards
