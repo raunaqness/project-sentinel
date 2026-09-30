@@ -1,0 +1,146 @@
+name: sentinel
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app: &app
+  build: .
+  image: sentinel:local
+  restart: unless-stopped
+  environment:
+    SENTINEL_ENVIRONMENT: ${SENTINEL_ENVIRONMENT:-production}
+    SENTINEL_LOG_LEVEL: ${SENTINEL_LOG_LEVEL:-INFO}
+    SENTINEL_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sentinel}
+    SENTINEL_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+    SENTINEL_REDIS_URL: redis://redis:6379/0
+    SENTINEL_MISSING_SETTLEMENT_SECONDS: ${SENTINEL_MISSING_SETTLEMENT_SECONDS:-86400}
+    SENTINEL_RECONCILIATION_GRACE_SECONDS: ${SENTINEL_RECONCILIATION_GRACE_SECONDS:-300}
+    SENTINEL_SCHEDULER_INTERVAL_SECONDS: ${SENTINEL_SCHEDULER_INTERVAL_SECONDS:-30}
+    SENTINEL_LEASE_SECONDS: ${SENTINEL_LEASE_SECONDS:-60}
+    SENTINEL_MAX_ATTEMPTS: ${SENTINEL_MAX_ATTEMPTS:-3}
+    FAIL_AFTER_STEP: ${FAIL_AFTER_STEP:-}
+    SENTINEL_EMBEDDER: ${SENTINEL_EMBEDDER:-fake}
+    SENTINEL_EMBEDDING_MODEL: ${SENTINEL_EMBEDDING_MODEL:-openai/text-embedding-3-small}
+    OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    SENTINEL_INVESTIGATOR: ${SENTINEL_INVESTIGATOR:-mock}
+    SENTINEL_LLM_MODEL: ${SENTINEL_LLM_MODEL:-openai/gpt-4o-mini}
+    SENTINEL_LLM_RATE_PER_SECOND: ${SENTINEL_LLM_RATE_PER_SECOND:-20}
+    SENTINEL_LLM_FAULT: ${SENTINEL_LLM_FAULT:-}
+    SENTINEL_WORKER_CONCURRENCY: ${SENTINEL_WORKER_CONCURRENCY:-4}
+    SENTINEL_RETRY_BACKOFF_SECONDS: ${SENTINEL_RETRY_BACKOFF_SECONDS:-5}
+  logging: *default-logging
+
+services:
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  kb-ingest:
+    <<: *app
+    command: ["python", "-m", "sentinel.retrieval.indexer"]
+    restart: "no"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:${SENTINEL_API_PORT:-8000}:8000"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redpanda: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  event-consumer:
+    <<: *app
+    command: ["python", "-m", "sentinel.workers.event_consumer"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redpanda: { condition: service_healthy }
+
+  scheduler:
+    <<: *app
+    command: ["python", "-m", "sentinel.workers.scheduler"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  investigation-worker:
+    <<: *app
+    command: ["python", "-m", "sentinel.workers.investigation_worker"]
+    stop_grace_period: 30s  # time to finish the current step on SIGTERM
+    depends_on:
+      kb-ingest: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }  # LLM rate limit (degrades gracefully if lost)
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-sentinel}
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c max_connections=50
+      -c work_mem=4MB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *default-logging
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=768M
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 48mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *default-logging
+
+volumes:
+  pgdata:
+  redpanda-data:

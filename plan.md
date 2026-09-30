@@ -1,15 +1,18 @@
 # Project Sentinel — Build Plan
 
 Production-grade AI transaction investigation platform (M37 Labs take-home).
-This file is the working plan. Each phase ends with passing tests, updated docs,
-and the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) filled in.
+This is the phased build plan. Each phase ended with passing tests, updated docs, and
+the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) filled in.
 
-## Working Agreement
+## Principles
 
-- No file is created or changed without explicit approval.
-- Commits happen only on explicit instruction.
-- A phase is "done" only when its exit criteria pass and its answers are written.
-- Answers in `ASSIGNMENT_ANSWERS.md` describe what is built, never what is planned.
+- Build one feature at a time, in the order of the assignment brief. Each works end to
+  end with sensible defaults first; concurrency and failure hardening follow in Phase 9.
+- A phase is done only when its tests pass, `docker compose up` runs the full system
+  built so far, and its answers in `ASSIGNMENT_ANSWERS.md` describe what is built.
+- Correctness safeguards from day one: `tenant_id` on every table, durable unique keys,
+  exact decimal amounts, broker offsets committed after the DB commit.
+- Keep it lean: no layer or file without a present use.
 
 ## Tech Stack
 
@@ -23,333 +26,317 @@ and the matching sections of [ASSIGNMENT_ANSWERS.md](ASSIGNMENT_ANSWERS.md) fill
 | Workflow | DB-backed state machine, leases + heartbeats, `FOR UPDATE SKIP LOCKED` | Explicit, demonstrable crash recovery |
 | Cache / rate limiting | Redis | Token bucket for LLM throughput; never used for correctness |
 | LLM | OpenRouter via OpenAI SDK (`base_url` override) | Provider-agnostic; model is config |
-| Embeddings | OpenRouter embeddings API (model TBC in Phase 4) | Behind `Embedder` interface; `FakeEmbedder` for tests |
-| Tooling | uv, ruff, mypy, pytest, testcontainers, Alembic | |
+| Embeddings | OpenRouter embeddings API (`text-embedding-3-small`) | Behind `Embedder` interface; `FakeEmbedder` for tests |
+| Tooling | uv, ruff, mypy, pytest, Alembic | Integration tests run against the compose stack |
 | Delivery | Docker Compose, Kubernetes (kustomize), GitHub Actions | |
+
+## Deployment Target (VPS)
+
+The system is deployed with Docker Compose on a shared VPS after each phase.
+
+- **Host:** x86_64, 4 vCPU, 8 GB RAM, shared with other services, so Sentinel must
+  stay within a hard memory budget.
+- **Ingress:** existing Cloudflare setup routes a subdomain to the API; only the
+  API is ever reachable from outside. Postgres, Redis and Redpanda are never
+  published (Docker bypasses `ufw`).
+- **LLM:** the deployed system uses OpenRouter; the mock is for tests/CI only.
+- **Load testing** runs off the VPS (laptop or CI), never on the shared host.
+
+| Service | Memory limit | Tuning |
+|---|---|---|
+| Redpanda | 1 GB | `--smp 1 --memory 768M --overprovisioned` |
+| PostgreSQL + pgvector | 384 MB | `shared_buffers=128MB`, `max_connections=50` |
+| Redis | 64 MB | `maxmemory 48mb` |
+| API | 256 MB | 1 uvicorn worker |
+| Event consumer | 256 MB | |
+| Investigation worker | 256 MB | Added in Phase 5 |
+| Scheduler | 128 MB | Added in Phase 3 |
+| **Total ceiling** | **~2.3 GB** | Typical idle ~1.5 GB |
 
 ## Phases
 
-### Phase 0 — Foundations
+### Phase 0 — Foundations ✅
 Spec: §22.1, §23 (partial), §27 (skeletons)
 
-- [ ] `README.md` skeleton linking `plan.md` and `ASSIGNMENT_ANSWERS.md`
-- [ ] `ASSIGNMENT_ANSWERS.md` skeleton — all questions listed, marked *pending*
-- [ ] `docs/decisions.md` with initial stack decisions
-- [ ] `pyproject.toml`, `uv.lock`, ruff/mypy/pytest configuration
-- [ ] `src/sentinel/` package skeleton, `config.py`
-- [ ] `docker-compose.yml`: postgres (pgvector), redpanda, redis
-- [ ] `.env.example`, `.gitignore`, `.dockerignore`, `Makefile`
-- [ ] Minimal CI: lint + unit tests
+- [x] `README.md` skeleton linking `plan.md` and `ASSIGNMENT_ANSWERS.md`
+- [x] `ASSIGNMENT_ANSWERS.md` skeleton — all questions listed, marked *pending*
+- [x] `docs/decisions.md` with initial stack decisions
+- [x] `pyproject.toml`, `uv.lock`, ruff/mypy/pytest configuration
+- [x] `src/sentinel/` package skeleton, `config.py`
+- [x] `.gitignore`
+- [x] `docker-compose.yml` (secure base, no published ports), `docker-compose.dev.yml`,
+      `docker-compose.vps.yml`
+- [x] `.env.example`, `.dockerignore`, `Makefile`
+- [x] Minimal CI: lint + unit tests (frozen until Phase 11)
 
-**Exit:** `docker compose up` brings infrastructure up healthy; CI green.
+### Phase 1 — Event Ingestion (§4) ✅
 
-### Phase 1 — Ingestion, Idempotency & Transaction State
-Spec: §4, §5, §14, §15
+- [x] Event schema: enums for source/type, Pydantic `EventIn` validation
+- [x] Migration `0001`: `tenants` (seeded: merchant_123, merchant_456), `events`
+      with `UNIQUE (tenant_id, event_id)` and index on `(tenant_id, transaction_id)`
+- [x] `POST /events` → 422 on malformed, else produce to `sentinel.events`
+      (key = `tenant_id:transaction_id`) → 202
+- [x] Event consumer: insert with `ON CONFLICT DO NOTHING`, commit offset after DB commit
+- [x] `GET /events?tenant_id=&transaction_id=`, `GET /health`
+- [x] Dockerfile; compose services `migrate`, `api`, `event-consumer`
 
-- [ ] Schema + migrations: tenants, users, events, transactions (tenant-scoped)
-- [ ] Event schemas with validation; malformed events rejected/quarantined
-- [ ] `POST /events` → Redpanda (partition key = tenant + transaction)
-- [ ] Event consumer: dedupe insert + state rebuild in one DB transaction; offset committed after DB commit
-- [ ] Order-independent state reducer (`domain/transaction_state.py`)
-- [ ] `GET /transactions/{id}`
+**Done when:** `docker compose up` → POST an event → GET shows it; posting it twice
+still shows one row. Unit test for validation, one integration test against compose.
 
-**Tests:** duplicate event ×10 → one logical result; settlement → ledger → payment → correct state; malformed event handling.
-**Answers:** Q1, Q2, Q10 (partial), Q11.
+### Phase 2 — Idempotency & Transaction State (§5) ✅
 
-### Phase 2 — Reconciliation & Investigation Creation
-Spec: §6, §7, §16 (priority)
+- [x] `transactions` table (materialized state per tenant + transaction)
+- [x] Order-independent state reducer (`domain/transaction_state.py`)
+- [x] Event insert + state update in one DB transaction; duplicates skip the update
+- [x] `GET /transactions/{id}`
 
-- [ ] Rule interface + self-registering registry
-- [ ] Rules: missing ledger, settlement mismatch, duplicate capture, missing settlement (configurable threshold), refund mismatch
-- [ ] `reconciliation_results` table
-- [ ] Investigations table with partial unique index on (tenant, transaction, anomaly type) WHERE active
-- [ ] Race-safe creation (`INSERT … ON CONFLICT DO NOTHING`)
-- [ ] Priority scoring (LOW → CRITICAL)
-- [ ] `audit_logs` table + audit service
+**Done when:** out-of-order and duplicate events produce the correct final state.
 
-**Tests:** each rule in isolation; two concurrent creators → exactly one active investigation.
-**Answers:** Q3, Q4.
+### Phase 3 — Reconciliation Engine (§6) ✅
 
-### Phase 3 — Workflow Engine & Crash Recovery
-Spec: §8, §9, §21, §22.3, §26
+- [x] Rule interface + decorator registry; rule modules auto-discovered
+- [x] Rules: missing ledger, ledger mismatch, settlement mismatch, duplicate capture,
+      missing settlement (configurable threshold), refund mismatch
+- [x] `reconciliation_results` (one row per transaction + anomaly, OPEN/RESOLVED);
+      overall state is DISCREPANCY iff a finding is open
+- [x] Grace periods measured from arrival time (no false alarms on late delivery);
+      missing-settlement deadline measured from capture time
+- [x] Scheduler worker re-reconciles unfinished transactions for time-based rules
+- [x] `audit_logs` (append-only, same DB transaction as the change): EVENT_RECEIVED,
+      DISCREPANCY_DETECTED, DISCREPANCY_RESOLVED
+- [x] JSON logs on stdout with service, worker_id, request_id, tenant/transaction/event ids
+- [x] `GET /reconciliation-results`, `GET /audit-logs`, findings on `GET /transactions/{id}`
 
-- [ ] `investigation_steps` table; state machine with allowed transitions
-- [ ] Worker claims jobs with `SKIP LOCKED`, lease + heartbeat
-- [ ] Checkpoint after every step; LLM response persisted before report commit
-- [ ] Scheduler reclaims expired leases
-- [ ] `FAIL_AFTER_STEP` failure injection
-- [ ] SIGTERM: stop claiming, finish or release current step
-- [ ] `Investigator` interface + `MockInvestigator`
+**Done when:** each rule has a unit test; mismatched transactions show results via API.
 
-**Tests:** kill worker after LLM response, before report commit → recovers, no duplicates, no hang.
-**Answers:** Q5, Q16.
+### Phase 4 — Investigation Creation (§7) ✅
 
-### Phase 4 — Knowledge Base, Retrieval & AI Investigator
-Spec: §10, §11, §18
+- [x] `investigations` table with partial unique index on
+      (tenant, transaction, anomaly type) WHERE `closed_at IS NULL`
+- [x] Created with the finding, in the same DB transaction (`INSERT … ON CONFLICT DO NOTHING`)
+- [x] Auto-resolved (`AUTO_RESOLVED`) when the finding resolves before work starts
+- [x] Priority scoring (LOW → CRITICAL) from anomaly, severity and amount
+- [x] Audit: INVESTIGATION_CREATED, INVESTIGATION_AUTO_RESOLVED
+- [x] `GET /investigations`, `GET /investigations/{id}` (tenant-scoped)
 
-- [ ] 15+ KB documents with front-matter metadata (tenant_id, document_type, gateway, effective_date)
-- [ ] Adversarial documents (instruction override, source-of-truth override)
-- [ ] Chunking, embeddings, `documents` / `document_chunks` tables with pgvector
-- [ ] Hybrid retrieval (vector + full-text) with mandatory tenant filter; reranking (bonus)
-- [ ] OpenRouter LLM client + `OpenRouterInvestigator`
-- [ ] Structured output schema (facts / hypotheses / recommendation), safe parsing
-- [ ] Grounding verifier: every fact cites a real event/chunk; amounts cross-checked against DB
+**Done when:** a mismatch opens exactly one investigation, visible via API.
 
-**Tests:** cross-tenant retrieval denied; malformed LLM output handled without state corruption; prompt injection ignored.
-**Answers:** Q6, Q7, Q8, Q14.
+### Phase 5 — Investigation Workflow & Crash Recovery (§8, §9) ✅
 
-### Phase 5 — Human Review, RBAC & Security
-Spec: §12, §13
+- [x] `investigation_steps` checkpoints (one per step, unique); STARTED → … → COMPLETED
+- [x] Investigation worker: priority-ordered claim with `FOR UPDATE SKIP LOCKED`,
+      lease + heartbeat, lease check on every checkpoint
+- [x] Crashed worker's job is reclaimed after lease expiry and resumes from its
+      last checkpoint; max attempts → FAILED
+- [x] Report stored atomically with the COMPLETED checkpoint → AWAITING_REVIEW
+- [x] `Investigator` interface + deterministic `MockInvestigator`; verification step
+      rejects facts citing unknown sources
+- [x] `FAIL_AFTER_STEP` (incl. `LLM_RESPONSE`) + dev-only per-event fault injection;
+      SIGTERM finishes the current step and releases the lease
+- [x] Audit: WORKFLOW_STARTED/RESUMED, INVESTIGATION_COMPLETED/FAILED
 
-- [ ] Auth (API keys/JWT → user, tenant, role)
-- [ ] Server-side RBAC: VIEWER, INVESTIGATOR, ADMIN
-- [ ] `GET /investigations`, `GET /investigations/{id}`, approve, reject, retry
-- [ ] Full audit coverage (actor, tenant, entity, action, timestamp)
-- [ ] `docs/security.md`
+**Done when:** killing the worker after the LLM step and restarting it completes
+the investigation with no duplicate.
 
-**Tests:** tenant A → tenant B resources denied; role permission matrix.
-**Answers:** Q9.
+### Phase 6 — Knowledge Base & Retrieval (§10) ✅
 
-### Phase 6 — Resilience Under Load & Observability
-Spec: §16, §17, §19, §20
+- [x] 18 markdown documents with front-matter metadata: 12 global, 2 per merchant,
+      2 adversarial (instruction override, source-of-truth override)
+- [x] `documents` / `document_chunks` with pgvector (HNSW) and generated tsvector (GIN)
+- [x] Chunking (paragraph packing, title + heading prefix); idempotent `kb-ingest`
+      (re-embeds only changed documents or on embedder change)
+- [x] Embedder interface: OpenRouter (OpenAI-compatible) + deterministic FakeEmbedder
+- [x] Hybrid search (vector + full-text, reciprocal rank fusion); tenant filter is
+      mandatory in the only search function; document_type / gateway / as-of filters
+- [x] KNOWLEDGE_RETRIEVED step uses anomaly-specific queries; chunk ids are citable
+- [x] `GET /knowledge/search`; walkthrough scenario `k`
 
-- [ ] LLM fault simulator: timeout, 429, 500, malformed JSON, empty, slow
-- [ ] Bounded retries with exponential backoff + jitter
-- [ ] Dead-letter records + inspection endpoint
-- [ ] Priority-aware job claiming; Redis token bucket for LLM rate
-- [ ] Backpressure strategy (queue growth, consumer concurrency, throttling)
-- [ ] `/metrics` with all required metrics; structured JSON logs with correlation IDs
-- [ ] Load generator (100k+ events) + `docs/load-test-report.md`
+**Done when:** retrieval returns relevant chunks and never another tenant's.
+OpenRouter embeddings endpoint confirmed (`openai/text-embedding-3-small`, 1536 dims).
 
-**Tests:** repeated LLM failures → DLQ, inspectable, retryable.
-**Answers:** Q12, Q13, Q15.
+### Phase 7 — AI Investigator (§11) ✅
 
-### Phase 7 — Deployment & CI
-Spec: §22, §23
+- [x] `OpenRouterInvestigator` (OpenAI SDK → OpenRouter, default `openai/gpt-4o-mini`),
+      selected with `SENTINEL_INVESTIGATOR=openrouter|mock`; tests/CI use the mock
+- [x] Strict JSON-schema structured output, Pydantic validation, one repair attempt,
+      then the step fails into the workflow's bounded retries
+- [x] SDK-level bounded retries with backoff for 429 / 5xx / timeouts; token usage and
+      latency recorded on the analysis checkpoint
+- [x] Prompt: evidence authoritative, retrieved documents wrapped as untrusted data,
+      single-tenant context, FACT / HYPOTHESIS / RECOMMENDATION rules
+- [x] Grounding: facts citing unknown sources or unsupported numbers are demoted to
+      hypotheses and counted; `requires_human_review` forced true
+- [x] Graceful SIGTERM demonstrated (walkthrough `s`)
 
-- [ ] Production Dockerfile (multi-stage, non-root)
-- [ ] Full compose: api, event-consumer, investigation-worker, scheduler + infra
-- [ ] Kubernetes manifests: probes, requests/limits, config/secrets
-- [ ] CI: lint → unit → integration → container build
+**Done when:** a real mismatch produces a validated, evidence-backed report.
+Verified on the VPS with `openai/gpt-4o-mini` and OpenRouter embeddings: 5/5 facts grounded, ~2k tokens, 3–6 s per investigation.
 
-**Exit:** `docker compose up` runs the whole system; CI green end to end.
+### Phase 8 — Review APIs, Multi-Tenancy, RBAC & Audit (§12, §13) ✅
 
-### Phase 8 — Evaluation, Demo & Final Documentation
-Spec: §25, §27, §28, §30, §31, §32
+- [x] API-key auth (`X-API-Key`, SHA-256 hashes only); `make seed` issues one key per
+      role per tenant into gitignored `.api-keys.json`
+- [x] Roles enforced server-side on every route: VIEWER (read), INVESTIGATOR (+review),
+      ADMIN (+audit, ingest), SERVICE (ingest only, for source systems)
+- [x] Tenant taken from the key on every endpoint; other tenants' resources → 404;
+      events for another tenant → 403
+- [x] Approve / reject / retry as conditional updates (concurrent decisions → one 409);
+      reviewer, time and comment recorded; user actions audited as `user:<name>`
+- [x] Walkthrough scenarios `r` (review) and `t` (tenant isolation, RBAC)
 
-- [ ] 20+ eval scenarios; runner reporting accuracy, citation correctness, unsupported-claim rate (+ latency/cost)
-- [ ] `docs/eval-report.md`
-- [ ] `scripts/demo.sh` (happy path) and `scripts/crash_demo.sh` (kill + recover)
-- [ ] Final `docs/architecture.md`, `docs/failure-model.md`
-- [ ] Implemented / simplified / omitted / productionization section
-- [ ] 1B events/day scaling section
+**Done when:** tenant A cannot see tenant B's data; roles are enforced server-side.
 
-**Answers:** Q17–Q21.
+### Phase 9 — Hardening (§14–§18) ✅
+
+- [x] Concurrency: 10 concurrent creators for one anomaly → exactly one active investigation
+- [x] Delivery semantics: consumer killed after DB commit, before offset commit →
+      redelivery absorbed (one row, one audit entry)
+- [x] Dead letters: malformed/rejected events and exhausted investigations, tenant-scoped,
+      `GET /dead-letters` (ADMIN); resolved when the investigation is retried
+- [x] Exponential backoff (jittered) between attempts; per-attempt error history
+- [x] LLM fault simulator: timeout, 429, 500, malformed, empty, slow (global or per event)
+- [x] Redis token bucket shared by all workers (LLM rate, default 20/s), local fallback when
+      Redis is down; worker concurrency (N investigations per process); priority claiming
+- [x] Prompt injection: deterministic screening quarantines suspicious chunks before the
+      model; obedient-model backstop proven (grounding, forced review, state unchanged)
+- [x] Walkthrough scenarios `q`, `m`, `f`, `pi`
+
+### Phase 10 — Observability, Load & Failure Injection (§19–§21)
+
+- [x] `/metrics` with all 11 required metrics on the API and every worker (JSON logs
+      since Phase 3); `request_id` propagated through Kafka
+- [x] Load generator (100k+ events); baseline run and `docs/load-test-report.md`
+- [x] `docs/failure-injection.md`; PostgreSQL, broker and Redis outages verified
+- [ ] Performance fixes from the load test (API-key cache, several API workers, more
+      partitions, scheduler `next_check_at`) and a 10k events/s burst test — *skipped to
+      ship the full feature set; documented in ASSIGNMENT_ANSWERS Q15/Q20*
+
+### Phase 11 — Kubernetes & CI (§22–§23)
+
+- [x] Dockerfile: slim base, non-root user (UID 10001) — single stage, kept lean
+- [x] Kubernetes manifests: probes, requests/limits, config/secrets (kustomize)
+- [x] CI: lint → types → unit → integration + walkthrough → container build
+- [x] VPS deployment via the compose VPS overlay (README → Deployment)
+
+### Phase 12 — Tests, Evaluation, Docs & Demo (§24–§32)
+
+- [x] All 7 mandatory tests present and passing (README → Running Tests)
+- [x] 22 eval scenarios, runner and `docs/eval-report.md` (mock baseline; real model via
+      `make eval`)
+- [x] Demo: `make demo` (§30 flow including worker kill and recovery)
+- [x] `docs/architecture.md`, `docs/failure-model.md`, `docs/security.md`
+- [x] Implemented / simplified / omitted section; 1B events/day section
 
 ## Answers Map
 
 | Q | Spec § | Topic | Phase |
 |---|---|---|---|
-| 1 | §5 | Durable idempotency & eventual consistency | 1 |
-| 2 | §4.1 | Duplicate / delayed / out-of-order / malformed / redelivery / crash | 1 |
-| 3 | §6 | Rule engine extensibility | 2 |
-| 4 | §7 | One active investigation under concurrency | 2 |
-| 5 | §8, §9 | Workflow state machine & crash recovery | 3 |
-| 6 | §10 | Tenant isolation in retrieval | 4 |
-| 7 | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | 4 |
-| 8 | §11.3 | Invalid / malformed model output | 4 |
-| 9 | §13 | RBAC & audit enforcement | 5 |
-| 10 | §14 | Indexes, constraints, transaction boundaries | 1–2 |
-| 11 | §15 | Commit-then-crash-before-ack; where "exactly once" holds | 1 |
-| 12 | §16 | Backpressure, priority, rate limiting, retries | 6 |
-| 13 | §17 | LLM failure handling & dead-lettering | 6 |
-| 14 | §18 | Prompt injection & source of truth | 4 |
-| 15 | §20 | Load test results & first bottleneck | 6 |
-| 16 | §22.3 | SIGTERM mid-investigation | 3 |
-| 17 | §25 | AI evaluation results | 8 |
-| 18 | §27 | Component rationale; strong vs eventual consistency | 8 |
-| 19 | §28 | Failure model per dependency | 8 |
-| 20 | §31 | Implemented / simplified / omitted / productionization | 8 |
-| 21 | §32 | 1B events/day: first five changes | 8 |
+| 1 | §5 | Durable idempotency & eventual consistency | 2 |
+| 2 | §4.1 | Duplicate / delayed / out-of-order / malformed / redelivery / crash | 1–2, 9 |
+| 3 | §6 | Rule engine extensibility | 3 |
+| 4 | §7 | One active investigation under concurrency | 4, 9 |
+| 5 | §8, §9 | Workflow state machine & crash recovery | 5 |
+| 6 | §10 | Tenant isolation in retrieval | 6 |
+| 7 | §11.1, §11.2 | Fact vs hypothesis; deterministic vs AI | 7 |
+| 8 | §11.3 | Invalid / malformed model output | 7 |
+| 9 | §13 | RBAC & audit enforcement | 8 |
+| 10 | §14 | Indexes, constraints, transaction boundaries | 1–5 |
+| 11 | §15 | Commit-then-crash-before-ack; where "exactly once" holds | 9 |
+| 12 | §16 | Backpressure, priority, rate limiting, retries | 9 |
+| 13 | §17 | LLM failure handling & dead-lettering | 9 |
+| 14 | §18 | Prompt injection & source of truth | 9 |
+| 15 | §20 | Load test results & first bottleneck | 10 |
+| 16 | §22.3 | SIGTERM mid-investigation | 5 |
+| 17 | §25 | AI evaluation results | 12 |
+| 18 | §27 | Component rationale; strong vs eventual consistency | 12 |
+| 19 | §28 | Failure model per dependency | 12 |
+| 20 | §31 | Implemented / simplified / omitted / productionization | 12 |
+| 21 | §32 | 1B events/day: first five changes | 12 |
 
 ## Project Structure
 
+Files are created only when the phase that needs them starts.
+
 ```
 project-sentinel/
-├── README.md                     # Overview, quickstart, demo steps, links to plan and answers
-├── plan.md                       # Phased build plan with a checklist per phase
-├── ASSIGNMENT_ANSWERS.md         # Answers to every question in the assignment PDF
-├── pyproject.toml                # Dependencies + ruff/mypy/pytest config (uv)
-├── uv.lock
+├── README.md
+├── plan.md
+├── ASSIGNMENT_ANSWERS.md
+├── pyproject.toml / uv.lock
 ├── alembic.ini
-├── Makefile                      # make up / test / lint / demo / load-test / eval
+├── Makefile
 ├── Dockerfile                    # One image; API or worker chosen by command
-├── docker-compose.yml            # api, workers, postgres(pgvector), redpanda, redis
-├── .env.example                  # OPENROUTER_API_KEY, model names, FAIL_AFTER_STEP, ...
-├── .gitignore
-├── .dockerignore
-│
-├── .github/workflows/
-│   └── ci.yml                    # lint → unit → integration → docker build
+├── docker-compose.yml            # secure base (no published ports)
+├── docker-compose.dev.yml        # local dev: publishes ports on 127.0.0.1
+├── docker-compose.vps.yml        # VPS: memory limits
+├── .env.example
+├── .github/workflows/ci.yml
 │
 ├── docs/
+│   ├── decisions.md              # ADRs
 │   ├── architecture.md
 │   ├── failure-model.md
 │   ├── security.md
-│   ├── decisions.md              # Why each technology was chosen (ADR style)
+│   ├── deployment-vps.md
 │   ├── load-test-report.md
 │   └── eval-report.md
 │
-├── src/sentinel/                 # ← all application code
-│   ├── __init__.py
-│   ├── config.py                 # Typed settings loaded from env
-│   │
-│   ├── api/                      # HTTP layer: validation, auth, calls services
-│   │   ├── main.py               # FastAPI app factory, startup/shutdown
-│   │   ├── deps.py               # DB session, current user, tenant context
-│   │   ├── middleware.py         # request_id, structured request logging
-│   │   └── routes/
-│   │       ├── events.py         # POST /events
-│   │       ├── transactions.py   # GET /transactions/{id}
-│   │       ├── investigations.py # list/get/approve/reject/retry
-│   │       ├── dead_letters.py   # inspect dead-lettered jobs
-│   │       ├── health.py         # liveness / readiness
-│   │       └── metrics.py        # GET /metrics
-│   │
-│   ├── auth/
-│   │   ├── tokens.py             # API key / JWT → user, tenant, role
-│   │   └── rbac.py               # VIEWER / INVESTIGATOR / ADMIN permission checks
-│   │
-│   ├── domain/                   # Pure logic, no I/O (easy to unit test)
-│   │   ├── enums.py              # sources, event types, statuses, severity, priority
-│   │   ├── events.py             # Pydantic event schemas + validation
-│   │   ├── transaction_state.py  # Rebuilds state from events; arrival order doesn't matter
-│   │   └── priority.py           # Scores LOW..CRITICAL (amount, anomaly, age, tenant policy)
-│   │
+├── src/sentinel/
+│   ├── config.py                 # Typed settings from env
+│   ├── api/
+│   │   ├── main.py               # FastAPI app
+│   │   ├── auth.py               # API keys → user/tenant/role; RBAC checks
+│   │   └── routes/               # events, transactions, investigations, dead_letters, health, metrics
+│   ├── domain/                   # Pure logic, no I/O
+│   │   ├── events.py             # enums + Pydantic event schema
+│   │   ├── transaction_state.py  # order-independent reducer
+│   │   └── priority.py
 │   ├── reconciliation/
-│   │   ├── base.py               # Rule interface + RuleResult
-│   │   ├── registry.py           # Rules register themselves (no if/elif chain)
-│   │   ├── engine.py             # Runs all rules against a transaction state
-│   │   └── rules/
-│   │       ├── missing_ledger.py
-│   │       ├── settlement_mismatch.py
-│   │       ├── duplicate_capture.py
-│   │       ├── missing_settlement.py
-│   │       └── refund_mismatch.py
-│   │
-│   ├── services/                 # Use cases; each owns its DB transaction boundary
-│   │   ├── ingestion.py          # store event + update state in one DB transaction
-│   │   ├── reconciliation.py     # run rules, store results
-│   │   ├── investigations.py     # create investigation (race-safe), retry
-│   │   ├── review.py             # approve / reject
-│   │   └── audit.py              # write audit log entries
-│   │
+│   │   ├── base.py / registry.py / engine.py
+│   │   └── rules/                # one file per rule
+│   ├── services/                 # Use cases; own their SQL and DB transaction boundary
+│   │   ├── ingestion.py
+│   │   ├── reconciliation.py
+│   │   ├── investigations.py
+│   │   ├── review.py
+│   │   └── audit.py
 │   ├── db/
-│   │   ├── session.py            # async engine + session factory
-│   │   ├── models.py             # tables, indexes, unique + partial constraints
-│   │   ├── repositories/         # every query takes tenant_id
-│   │   │   ├── events.py
-│   │   │   ├── transactions.py
-│   │   │   ├── investigations.py
-│   │   │   ├── documents.py
-│   │   │   └── audit_logs.py
+│   │   ├── session.py
+│   │   ├── models.py
 │   │   └── migrations/
-│   │       ├── env.py
-│   │       └── versions/
-│   │
 │   ├── messaging/
-│   │   ├── topics.py             # topic names, partition key = tenant+transaction
-│   │   ├── producer.py
-│   │   └── consumer.py           # at-least-once, commits offset only after the DB commit
-│   │
-│   ├── workers/                  # Entry points for long-running processes
-│   │   ├── event_consumer.py     # broker → ingestion → reconciliation → investigation
-│   │   ├── investigation_worker.py # claims jobs (SKIP LOCKED), lease + heartbeat
-│   │   ├── scheduler.py          # expired leases, missing-settlement timer, retry backoff
-│   │   └── shutdown.py           # SIGTERM: stop claiming, finish/release current step
-│   │
+│   │   └── kafka.py              # producer + consumer helpers, topic names
+│   ├── workers/
+│   │   ├── base.py               # run loop + SIGTERM handling
+│   │   ├── event_consumer.py
+│   │   ├── investigation_worker.py
+│   │   └── scheduler.py          # lease reclaim, missing-settlement timer
 │   ├── workflow/
-│   │   ├── states.py             # STARTED → … → COMPLETED + allowed transitions
-│   │   ├── engine.py             # runs steps, saves a checkpoint after each step
-│   │   ├── steps.py              # collect data, collect events, retrieve, analyze, verify
-│   │   ├── failure_injection.py  # FAIL_AFTER_STEP=LLM_RESPONSE / RETRIEVAL / ...
-│   │   └── dead_letter.py        # retry limit reached → DLQ record (inspectable)
-│   │
+│   │   ├── states.py / engine.py / steps.py
+│   │   ├── failure_injection.py  # FAIL_AFTER_STEP
+│   │   └── dead_letter.py
 │   ├── retrieval/
-│   │   ├── loader.py             # reads KB markdown + front-matter metadata
 │   │   ├── chunking.py
-│   │   ├── embeddings.py         # Embedder interface: OpenRouterEmbedder, FakeEmbedder
-│   │   ├── indexer.py            # chunks → embeddings → document_chunks
-│   │   ├── search.py             # hybrid pgvector + full-text, tenant filter always applied
-│   │   └── rerank.py             # bonus
-│   │
+│   │   ├── embeddings.py         # Embedder interface: OpenRouter + fake
+│   │   ├── indexer.py            # load KB → chunk → embed → store
+│   │   └── search.py             # hybrid search, tenant filter always applied
 │   ├── ai/
-│   │   ├── investigator.py       # Investigator interface
+│   │   ├── investigator.py       # interface + mock
 │   │   ├── openrouter_investigator.py
-│   │   ├── mock_investigator.py  # deterministic, used by tests + eval baseline
-│   │   ├── llm_client.py         # OpenAI SDK + OpenRouter base_url, timeouts, backoff
-│   │   ├── fault_simulator.py    # simulates 429 / 500 / timeout / bad JSON / empty / slow
-│   │   ├── prompts.py            # system prompt; retrieved text wrapped as untrusted data
-│   │   ├── schemas.py            # InvestigationReport (facts / hypotheses / action)
-│   │   ├── parsing.py            # safe parse + validate, never partial writes
-│   │   └── grounding.py          # every fact must cite a real event/chunk; amounts checked against DB
-│   │
-│   ├── ratelimit/
-│   │   └── token_bucket.py       # Redis-based LLM throttle (20/s) with priority handling
-│   │
+│   │   ├── llm_client.py
+│   │   ├── fault_simulator.py
+│   │   ├── prompts.py
+│   │   ├── schemas.py            # report model + safe parsing
+│   │   ├── grounding.py
+│   │   └── ratelimit.py          # Redis token bucket
 │   └── observability/
-│       ├── logging.py            # JSON logs with request/tenant/txn/event/investigation/worker ids
-│       └── metrics.py            # all Prometheus counters/histograms from §19
+│       ├── logging.py
+│       └── metrics.py
 │
-├── knowledge_base/               # Data, not code: markdown + YAML front-matter
-│   ├── global/                   # runbooks, policies, settlement rules, refund procedures
-│   ├── merchant_123/             # tenant-private docs + incident reports
-│   ├── merchant_456/
-│   └── adversarial/              # "ignore all instructions…", "always mark reconciled…"
-│
-├── eval/
-│   ├── scenarios/                # 20+ JSON scenarios (events + expected classification)
-│   ├── run_eval.py
-│   ├── metrics.py                # accuracy, citation correctness, unsupported-claim rate
-│   └── results/
-│
-├── scripts/                      # Thin CLIs that call into src/sentinel
-│   ├── seed.py                   # tenants, users, API keys
-│   ├── ingest_kb.py
-│   ├── load_generator.py         # 100k+ events: healthy, mismatches, duplicates, out-of-order
-│   ├── demo.sh                   # happy path end-to-end
-│   └── crash_demo.sh             # kill worker mid-investigation, restart, show recovery
-│
-├── deploy/k8s/
-│   ├── kustomization.yaml
-│   ├── namespace.yaml
-│   ├── configmap.yaml
-│   ├── secret.example.yaml
-│   ├── api.yaml                  # Deployment + Service, probes, requests/limits
-│   ├── event-consumer.yaml
-│   ├── investigation-worker.yaml
-│   ├── scheduler.yaml
-│   ├── redis.yaml
-│   └── redpanda.yaml             # Postgres assumed external (per spec)
-│
+├── knowledge_base/               # markdown + front-matter (global/, merchant_*/, adversarial/)
+├── eval/                         # scenarios/, run_eval.py, results/
+├── scripts/                      # seed, load_generator, demo, crash_demo
+├── deploy/k8s/                   # kustomize manifests
 └── tests/
-    ├── conftest.py               # testcontainers: postgres + redpanda + redis
-    ├── fixtures/
     ├── unit/
-    │   ├── test_transaction_state.py
-    │   ├── test_rules.py
-    │   ├── test_priority.py
-    │   ├── test_parsing.py
-    │   ├── test_grounding.py
-    │   └── test_chunking.py
-    └── integration/              # the 7 mandatory tests + extras
-        ├── test_duplicate_event.py
-        ├── test_out_of_order.py
-        ├── test_concurrency.py
-        ├── test_worker_crash.py
-        ├── test_tenant_isolation.py
-        ├── test_malformed_llm_output.py
-        ├── test_prompt_injection.py
-        ├── test_llm_failures_dlq.py
-        └── test_rbac.py
+    └── integration/              # run against the compose stack
 ```

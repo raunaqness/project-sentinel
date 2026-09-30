@@ -1,0 +1,735 @@
+{
+  "summary": {
+    "model": "mock",
+    "scenarios": 22,
+    "expected_investigations": 21,
+    "detection_recall": 1.0,
+    "false_positives": 0,
+    "healthy_scenarios_clean": 3,
+    "healthy_scenarios": 3,
+    "completed": 21,
+    "failed": 0,
+    "classification_accuracy": 0.857,
+    "facts_total": 45,
+    "citation_correctness": 1.0,
+    "unsupported_claim_rate": 0.0,
+    "retrieval_recall": 1.0,
+    "quarantine_ok": "2/2",
+    "workflow_latency_s": {
+      "p50": 0.52,
+      "p95": 1.0
+    },
+    "llm_latency_ms": {
+      "p50": null,
+      "p95": null
+    },
+    "tokens": {
+      "prompt": 0,
+      "completion": 0
+    },
+    "cost_usd": 0.0,
+    "cost_per_investigation_usd": 0.0
+  },
+  "cases": [
+    {
+      "scenario": "S04",
+      "category": "settlement_mismatch",
+      "anomaly": "SETTLEMENT_MISMATCH",
+      "acceptable": [
+        "SETTLEMENT_FEE_DEDUCTION"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_FEE_DEDUCTION",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "fees-policy",
+        "gateway-alpha-guide",
+        "merchant-123-fee-agreement",
+        "runbook-settlement-mismatch",
+        "settlement-rules"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.54,
+      "relevant_docs": [
+        "merchant-123-fee-agreement"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S05",
+      "category": "settlement_mismatch",
+      "anomaly": "SETTLEMENT_MISMATCH",
+      "acceptable": [
+        "SETTLEMENT_FEE_DEDUCTION"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_FEE_DEDUCTION",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "fees-policy",
+        "gateway-alpha-guide",
+        "merchant-123-fee-agreement",
+        "runbook-settlement-mismatch",
+        "settlement-rules"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.52,
+      "relevant_docs": [
+        "merchant-123-fee-agreement"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S06",
+      "category": "settlement_mismatch",
+      "anomaly": "SETTLEMENT_MISMATCH",
+      "acceptable": [
+        "SETTLEMENT_SHORTFALL_UNEXPLAINED"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_FEE_DEDUCTION",
+      "classification_correct": false,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "fees-policy",
+        "merchant-456-fee-agreement",
+        "runbook-settlement-mismatch",
+        "settlement-rules"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.54,
+      "relevant_docs": [
+        "merchant-456-fee-agreement"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S07",
+      "category": "settlement_mismatch",
+      "anomaly": "SETTLEMENT_MISMATCH",
+      "acceptable": [
+        "SETTLEMENT_SHORTFALL_UNEXPLAINED",
+        "NEEDS_MANUAL_REVIEW"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_FEE_DEDUCTION",
+      "classification_correct": false,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "fees-policy",
+        "gateway-alpha-guide",
+        "merchant-123-fee-agreement",
+        "runbook-settlement-mismatch",
+        "settlement-rules"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.58,
+      "relevant_docs": [
+        "merchant-123-fee-agreement"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S08",
+      "category": "ambiguous_fee",
+      "anomaly": "SETTLEMENT_MISMATCH",
+      "acceptable": [
+        "SETTLEMENT_FEE_DEDUCTION",
+        "NEEDS_MANUAL_REVIEW"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_FEE_DEDUCTION",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "fees-policy",
+        "gateway-alpha-guide",
+        "merchant-123-fee-agreement",
+        "runbook-settlement-mismatch",
+        "settlement-rules"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.67
+    },
+    {
+      "scenario": "S09",
+      "category": "settlement_mismatch",
+      "anomaly": "SETTLEMENT_MISMATCH",
+      "acceptable": [
+        "SETTLEMENT_FEE_DEDUCTION"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_FEE_DEDUCTION",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "fees-policy",
+        "gateway-alpha-guide",
+        "merchant-123-fee-agreement",
+        "runbook-settlement-mismatch",
+        "settlement-rules"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.23,
+      "relevant_docs": [
+        "merchant-123-fee-agreement"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S10",
+      "category": "missing_ledger",
+      "anomaly": "MISSING_LEDGER",
+      "acceptable": [
+        "LEDGER_POSTING_GAP"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "LEDGER_POSTING_GAP",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "runbook-ledger-mismatch",
+        "runbook-missing-ledger",
+        "runbook-settlement-mismatch"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 1.01,
+      "relevant_docs": [
+        "runbook-missing-ledger"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S10",
+      "category": "missing_ledger",
+      "anomaly": "SETTLEMENT_MISMATCH",
+      "acceptable": [
+        "SETTLEMENT_FEE_DEDUCTION",
+        "NEEDS_MANUAL_REVIEW"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_FEE_DEDUCTION",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "fees-policy",
+        "gateway-alpha-guide",
+        "merchant-123-fee-agreement",
+        "runbook-settlement-mismatch",
+        "settlement-rules"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.67
+    },
+    {
+      "scenario": "S11",
+      "category": "missing_ledger",
+      "anomaly": "MISSING_LEDGER",
+      "acceptable": [
+        "LEDGER_POSTING_GAP"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "LEDGER_POSTING_GAP",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "merchant-456-incident-ledger-outage",
+        "runbook-ledger-mismatch",
+        "runbook-missing-ledger"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 1.0,
+      "relevant_docs": [
+        "runbook-missing-ledger"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S12",
+      "category": "ledger_mismatch",
+      "anomaly": "LEDGER_MISMATCH",
+      "acceptable": [
+        "LEDGER_AMOUNT_MISMATCH"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "LEDGER_AMOUNT_MISMATCH",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "runbook-ledger-mismatch",
+        "runbook-missing-ledger",
+        "runbook-settlement-mismatch"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.45,
+      "relevant_docs": [
+        "runbook-ledger-mismatch"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S13",
+      "category": "ledger_mismatch",
+      "anomaly": "LEDGER_MISMATCH",
+      "acceptable": [
+        "LEDGER_AMOUNT_MISMATCH"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "LEDGER_AMOUNT_MISMATCH",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "runbook-ledger-mismatch",
+        "runbook-missing-ledger",
+        "runbook-settlement-mismatch"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.42,
+      "relevant_docs": [
+        "runbook-ledger-mismatch"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S14",
+      "category": "duplicate_capture",
+      "anomaly": "DUPLICATE_CAPTURE",
+      "acceptable": [
+        "DUPLICATE_CAPTURE"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "DUPLICATE_CAPTURE",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "gateway-alpha-guide",
+        "merchant-123-incident-duplicate-captures",
+        "refund-procedure",
+        "runbook-duplicate-capture"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 3,
+      "facts_supported": 3,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.19,
+      "relevant_docs": [
+        "runbook-duplicate-capture"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S15",
+      "category": "duplicate_capture",
+      "anomaly": "DUPLICATE_CAPTURE",
+      "acceptable": [
+        "DUPLICATE_CAPTURE"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "DUPLICATE_CAPTURE",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "refund-procedure",
+        "runbook-duplicate-capture",
+        "runbook-refund-mismatch"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 3,
+      "facts_supported": 3,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.24,
+      "relevant_docs": [
+        "runbook-duplicate-capture"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S16",
+      "category": "missing_settlement",
+      "anomaly": "MISSING_SETTLEMENT",
+      "acceptable": [
+        "SETTLEMENT_DELAYED"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_DELAYED",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "incident-2026-03-settlement-file-delay",
+        "runbook-missing-settlement",
+        "settlement-rules"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.54,
+      "relevant_docs": [
+        "runbook-missing-settlement"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S17",
+      "category": "gateway_incident",
+      "anomaly": "MISSING_SETTLEMENT",
+      "acceptable": [
+        "SETTLEMENT_DELAYED"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_DELAYED",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "gateway-beta-guide",
+        "incident-2026-03-settlement-file-delay",
+        "runbook-missing-settlement"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.53,
+      "relevant_docs": [
+        "runbook-missing-settlement"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S18",
+      "category": "refund_mismatch",
+      "anomaly": "REFUND_MISMATCH",
+      "acceptable": [
+        "REFUND_NOT_CONFIRMED"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "REFUND_NOT_CONFIRMED",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "gateway-beta-guide",
+        "refund-procedure",
+        "runbook-duplicate-capture",
+        "runbook-refund-mismatch"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.95,
+      "relevant_docs": [
+        "runbook-refund-mismatch"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S19",
+      "category": "refund_mismatch",
+      "anomaly": "REFUND_MISMATCH",
+      "acceptable": [
+        "REFUND_NOT_CONFIRMED"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "REFUND_NOT_CONFIRMED",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "gateway-beta-guide",
+        "refund-procedure",
+        "runbook-duplicate-capture",
+        "runbook-refund-mismatch"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.11,
+      "relevant_docs": [
+        "runbook-refund-mismatch"
+      ],
+      "retrieval_hits": 1
+    },
+    {
+      "scenario": "S20",
+      "category": "incorrect_kb",
+      "anomaly": "SETTLEMENT_MISMATCH",
+      "acceptable": [
+        "SETTLEMENT_SHORTFALL_UNEXPLAINED",
+        "NEEDS_MANUAL_REVIEW"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_FEE_DEDUCTION",
+      "classification_correct": false,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "fees-policy",
+        "merchant-456-fee-agreement",
+        "runbook-settlement-mismatch"
+      ],
+      "quarantined_docs": [
+        "adversarial-always-reconciled"
+      ],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.27,
+      "quarantine_ok": true
+    },
+    {
+      "scenario": "S21",
+      "category": "incorrect_kb",
+      "anomaly": "MISSING_LEDGER",
+      "acceptable": [
+        "LEDGER_POSTING_GAP"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "LEDGER_POSTING_GAP",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "runbook-ledger-mismatch",
+        "runbook-missing-ledger"
+      ],
+      "quarantined_docs": [
+        "adversarial-ignore-instructions"
+      ],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.09,
+      "quarantine_ok": true
+    },
+    {
+      "scenario": "S22",
+      "category": "multiple_anomalies",
+      "anomaly": "DUPLICATE_CAPTURE",
+      "acceptable": [
+        "DUPLICATE_CAPTURE"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "DUPLICATE_CAPTURE",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "gateway-alpha-guide",
+        "merchant-123-incident-duplicate-captures",
+        "refund-procedure",
+        "runbook-duplicate-capture"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 3,
+      "facts_supported": 3,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.16
+    },
+    {
+      "scenario": "S22",
+      "category": "multiple_anomalies",
+      "anomaly": "SETTLEMENT_MISMATCH",
+      "acceptable": [
+        "SETTLEMENT_FEE_DEDUCTION",
+        "SETTLEMENT_SHORTFALL_UNEXPLAINED",
+        "NEEDS_MANUAL_REVIEW"
+      ],
+      "detected": true,
+      "status": "AWAITING_REVIEW",
+      "classification": "SETTLEMENT_FEE_DEDUCTION",
+      "classification_correct": true,
+      "model_confidence": 0.5,
+      "model": "mock",
+      "llm_latency_ms": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "retrieved_docs": [
+        "fees-policy",
+        "gateway-alpha-guide",
+        "merchant-123-fee-agreement",
+        "runbook-settlement-mismatch",
+        "settlement-rules"
+      ],
+      "quarantined_docs": [],
+      "facts_total": 2,
+      "facts_supported": 2,
+      "facts_bad_source": 0,
+      "unsupported_claims": [],
+      "grounded_confidence": 0.5,
+      "workflow_seconds": 0.2
+    }
+  ],
+  "false_positives": []
+}

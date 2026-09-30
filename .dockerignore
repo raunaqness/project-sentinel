@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+.env
+**/__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+docs
+eval/results
+loadtest-output
+*.md
+!README.md
+!knowledge_base/**

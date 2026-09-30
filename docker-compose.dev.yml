@@ -1,0 +1,28 @@
+# Local development: publish ports on 127.0.0.1 and use short reconciliation timings
+# so grace periods and the scheduler can be observed in seconds (integration tests
+# rely on these values).
+x-fast-reconciliation: &fast-reconciliation
+  SENTINEL_RECONCILIATION_GRACE_SECONDS: "2"
+  SENTINEL_SCHEDULER_INTERVAL_SECONDS: "2"
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+  redpanda:
+    ports:
+      - "127.0.0.1:${REDPANDA_PORT:-19092}:19092"
+  redis:
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+  event-consumer:
+    environment:
+      <<: *fast-reconciliation
+      SENTINEL_ALLOW_FAULT_INJECTION: "true"  # metadata.fail_after_commit (delivery test)
+  scheduler:
+    environment: *fast-reconciliation
+  investigation-worker:
+    environment:
+      SENTINEL_LEASE_SECONDS: "5"  # a crashed worker's job is reclaimed within seconds
+      SENTINEL_ALLOW_FAULT_INJECTION: "true"  # per-event fail_after_step / llm_fault (tests)
+      SENTINEL_RETRY_BACKOFF_SECONDS: "1"  # retries within seconds instead of minutes

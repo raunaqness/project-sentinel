@@ -1,0 +1,23 @@
+# Sentinel on Kubernetes (spec §22.2):  kubectl apply -k deploy/k8s
+# PostgreSQL (with pgvector) is external: put its URL in secret.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: sentinel
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - redis.yaml
+  - redpanda.yaml
+  - jobs.yaml
+  - api.yaml
+  - event-consumer.yaml
+  - scheduler.yaml
+  - investigation-worker.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: sentinel
+images:
+  - name: sentinel
+    newName: ghcr.io/raunaqness/project-sentinel  # push your build here, or override per environment
+    newTag: latest
