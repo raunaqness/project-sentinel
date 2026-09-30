@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test test-integration check up down logs ps config walkthrough demo eval ingest-kb seed metrics
+.PHONY: install lint format typecheck test test-integration check up down logs ps config walkthrough demo verify eval ingest-kb seed metrics
 
 install:        ## Install dependencies
 	uv sync
@@ -42,6 +42,9 @@ walkthrough:    ## Send real events through the running stack and check the outc
 
 demo:           ## The §30 demo: mismatch → investigation → AI report → approve; worker kill + recovery
 	scripts/walkthrough.sh demo
+
+verify:         ## Re-run every check (tests, walkthrough, demo, eval) and write docs/verification.md
+	scripts/verify.sh
 
 eval:           ## Run the AI evaluation scenarios through the running stack (eval/)
 	uv run python eval/run_eval.py

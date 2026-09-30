@@ -33,6 +33,16 @@ has a test.
 | Architecture and failure-model docs | [architecture](docs/architecture.md), [failure model](docs/failure-model.md), [security](docs/security.md), [decisions](docs/decisions.md), [failure injection](docs/failure-injection.md) |
 | README with setup and demo | this file |
 
+## Verification
+
+The author re-ran everything on their own VPS before submitting, with `make verify`.
+The script runs the unit and integration tests, the full walkthrough, the §30 demo and
+the AI evaluation against the live stack. It then writes
+**[docs/verification.md](docs/verification.md)** from the actual output: environment,
+commit, per-check results, the evaluation table and raw logs.
+
+*The run summary is added here after the VPS run.*
+
 ## How It Works
 
 ```
@@ -135,6 +145,7 @@ make check              # ruff lint + format check, strict mypy, unit tests (no 
 make up && make seed    # the integration tests run against the real stack
 make test-integration   # 38 tests: API → Kafka → consumer → PostgreSQL → workers
 scripts/walkthrough.sh  # end-to-end scenarios (CI runs this too)
+make verify             # all of the above plus demo and eval → docs/verification.md
 make eval               # AI evaluation: 22 scenarios through the stack → eval/results/
 uv run python scripts/load_generator.py --events 100000   # load test → loadtest-output/
 ```

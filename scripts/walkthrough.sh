@@ -142,7 +142,7 @@ crash_case() {  # crash_case <label> <txn> <metadata-json>
   expect "attempts" "$(invs "$t" | jq -r '.[0].attempts')" 2
   echo "  worker log for $t:"
   docker compose logs --no-log-prefix investigation-worker \
-    | grep -o '{.*' | jq -c --arg t "$t" 'select(.transaction_id==$t) | {ts, msg, attempt, fail_after_step, remaining}' \
+    | grep -o '{.*' | jq -cR --arg t "$t" 'fromjson? | select(.transaction_id==$t) | {ts, msg, attempt, fail_after_step, remaining}' \
     | sed 's/^/    /' || true  # informational only; must never abort the run
 }
 
@@ -226,7 +226,7 @@ scenario_s() {
   expect "in-flight step finished and checkpointed" "$(invs "$t" | jq -r '.[0].current_step')" AI_ANALYSIS_COMPLETED
   expect "lease released on shutdown" "$(psql_q "select coalesce(lease_owner, 'released') from investigations where id='$id'")" released
   docker compose logs --no-log-prefix investigation-worker | grep -o '{.*' \
-    | jq -c --arg t "$t" 'select(.transaction_id==$t or .msg=="stopped") | {ts, msg, next_step}' | tail -4 | sed 's/^/    /' || true
+    | jq -cR --arg t "$t" 'fromjson? | select(.transaction_id==$t or .msg=="stopped") | {ts, msg, next_step}' | tail -4 | sed 's/^/    /' || true
   echo "  starting the worker again..."
   docker compose start investigation-worker >/dev/null 2>&1
   wait_for 30 sh -c "curl -s -H 'X-API-Key: $ADMIN_KEY' '$API/investigations?transaction_id=$t' | jq -e '.[] | select(.status==\"AWAITING_REVIEW\")'"
@@ -344,7 +344,7 @@ scenario_q() {
   expect "event stored once" "$(api "/events?transaction_id=$t" | jq '[.[] | select(.event_id=="evt_Q_p_'"$RUN"'")] | length')" 1
   expect "one logical update (audit)" "$(api "/audit-logs?entity_id=evt_Q_p_$RUN" | jq -c '[.[].action]')" '["EVENT_RECEIVED"]'
   docker compose logs --no-log-prefix event-consumer | grep -o '{.*' \
-    | jq -c --arg e "evt_Q_p_$RUN" 'select(.event_id==$e or (.msg|test("injected"))) | {ts, msg}' | tail -3 | sed 's/^/    /' || true
+    | jq -cR --arg e "evt_Q_p_$RUN" 'fromjson? | select(.event_id==$e or (.msg|test("injected"))) | {ts, msg}' | tail -3 | sed 's/^/    /' || true
 }
 
 scenario_m() {
@@ -405,9 +405,9 @@ scenario_obs() {
   sleep 2
   echo "  log lines carrying request_id=$rid:"
   docker compose logs --no-log-prefix api event-consumer | grep -o '{.*' \
-    | jq -c --arg r "$rid" 'select(.request_id==$r) | {service, msg, event_id}' | sed 's/^/    /' || true
+    | jq -cR --arg r "$rid" 'fromjson? | select(.request_id==$r) | {service, msg, event_id}' | sed 's/^/    /' || true
   expect "request_id reached the consumer" "$(docker compose logs --no-log-prefix event-consumer | grep -o '{.*' \
-    | jq -c --arg r "$rid" 'select(.request_id==$r)' | wc -l | awk '{print ($1>0)}')" 1
+    | jq -cR --arg r "$rid" 'fromjson? | select(.request_id==$r)' | wc -l | awk '{print ($1>0)}')" 1
 }
 
 scenario_look() {
@@ -424,7 +424,7 @@ scenario_look() {
   fi
   echo "JSON logs across services for $b:"
   docker compose logs --no-log-prefix api event-consumer scheduler investigation-worker \
-    | grep -o '{.*' | jq -c --arg t "$b" 'select(.transaction_id==$t) | {ts, service, msg, state}' \
+    | grep -o '{.*' | jq -cR --arg t "$b" 'fromjson? | select(.transaction_id==$t) | {ts, service, msg, state}' \
     | sort | sed 's/^/  /' || true
 }
 
