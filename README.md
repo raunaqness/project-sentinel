@@ -41,7 +41,20 @@ the AI evaluation against the live stack. It then writes
 **[docs/verification.md](docs/verification.md)** from the actual output: environment,
 commit, per-check results, the evaluation table and raw logs.
 
-*The run summary is added here after the VPS run.*
+**Author's run:** 2026-09-30, commit `337c09c`, on a 4 vCPU / 8 GB VPS. The demo and
+evaluation used `openai/gpt-4o-mini` via OpenRouter, with OpenRouter embeddings.
+
+- **Tests: all pass.** 95 unit tests, plus 38 integration tests against the full stack.
+- **End to end: all pass.** 71/71 walkthrough checks, and 5/5 checks in the §30 demo on
+  the real model, including a worker SIGKILLed mid-analysis resuming from its last
+  checkpoint.
+- **AI evaluation (real model):**
+  - 100% detection, 0 false positives, 2/2 adversarial documents quarantined.
+  - **81% classification accuracy** (17/21). All 88 cited facts are valid and supported
+    by evidence.
+  - LLM latency p50 3.4 s; about $0.0004 per investigation.
+  - The four misses are cautious: fee-explained gaps the model called "unexplained".
+    See [eval-report](docs/eval-report.md#results-openaigpt-4o-mini-via-openrouter).
 
 ## How It Works
 
@@ -176,7 +189,7 @@ SENTINEL_EMBEDDER=openrouter          # real embeddings (default: fake; changing
 ```
 
 `make demo` and `make eval` then use `openai/gpt-4o-mini` via OpenRouter. An eval run
-makes 21 model calls, costing well under one cent.
+makes 21 model calls, costing about one cent (measured: $0.009).
 
 ## Configuration
 
@@ -255,6 +268,10 @@ tests/             unit and integration tests
   scheduler's rescans) are measured and fixes are identified, but not applied. No
   10,000 events/s burst test was run. See [Q15](ASSIGNMENT_ANSWERS.md#q15) and
   [Q20](ASSIGNMENT_ANSWERS.md#q20).
+- **Fee-explained gaps get over-escalated.** The real model sometimes calls a gap
+  "unexplained" even when it equals the documented fee, and it does so at high
+  confidence. The miss is on the safe side, but it is avoidable
+  ([eval-report](docs/eval-report.md)).
 - **Deliberately lean infrastructure.** API-key authentication instead of an identity
   provider, single-node Redpanda, no dashboards or tracing. The full list of what was
   implemented, simplified and omitted is in [Q20](ASSIGNMENT_ANSWERS.md#q20).

@@ -643,8 +643,8 @@ and a restarted worker resumes at `RESULT_VERIFIED` without repeating the analys
 classification accuracy, citation correctness, unsupported claim rate. Bonus:
 retrieval precision/recall, model latency and estimated LLM cost.*
 
-**Status:** Answered (Phase 12). Mock baseline measured; the OpenRouter run is done on
-the VPS with `make eval`.
+**Status:** Answered (Phase 12). Mock baseline, plus a real-model run on the author's VPS
+(run `7a8dfb`, [verification report](docs/verification.md)).
 
 **Dataset:** [22 scenarios](eval/scenarios.json), producing 21 expected investigations.
 They cover:
@@ -665,17 +665,24 @@ makes accuracy measurable.
 
 | Metric | Mock investigator | OpenRouter investigator |
 |---|---|---|
-| Classification accuracy | 85.7% (18/21) | see [eval-report](docs/eval-report.md) |
-| Citation correctness | 100% (45 facts) | ″ |
-| Unsupported claim rate | 0% | ″ |
-| Retrieval recall | 100% (15/15); adversarial docs quarantined 2/2 | same retrieval |
-| Model latency | n/a (workflow p50 0.52 s) | ″ |
-| Estimated cost | $0 | ″ |
+| Classification accuracy | 85.7% (18/21) | **81.0% (17/21)** |
+| Citation correctness | 100% (45 facts) | **100% (88 facts)** |
+| Unsupported claim rate | 0% | **0%** |
+| Retrieval recall | 100% (15/15); adversarial docs quarantined 2/2 | 100%; 2/2 quarantined |
+| Model latency | n/a (workflow p50 0.52 s) | p50 3.4 s, p95 5.2 s |
+| Estimated cost | $0 | $0.009 per run, $0.0004 per investigation (`gpt-4o-mini`) |
 
 - **Detection:** 100% recall, 0 false positives.
 - **Mock misses:** the three cases needing judgement (a gross-settling gateway, a gap
   that doesn't match the documented fee, and adversarial content). The mock labels all
   three a fee deduction.
+- **gpt-4o-mini:**
+  - It gets those three judgement cases right, and never wrongly clears a gap.
+  - It misses four cases where the gap equals the documented 0.5% fee, calling them
+    "unexplained" at 0.9 confidence even with the fee agreement retrieved. That is the
+    safe direction, but avoidable.
+  - The planned fix: compute the expected fee deterministically in the finding
+    ([eval-report](docs/eval-report.md#what-the-numbers-say)).
 - **Retrieval precision** isn't reported, because each scenario labels one relevant
   document, so precision would mostly count other useful context as misses.
 
