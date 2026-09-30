@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test test-integration check up down logs ps config walkthrough ingest-kb seed metrics
+.PHONY: install lint format typecheck test test-integration check up down logs ps config walkthrough eval ingest-kb seed metrics
 
 install:        ## Install dependencies
 	uv sync
@@ -39,6 +39,9 @@ config:         ## Validate compose files
 
 walkthrough:    ## Send real events through the running stack and check the outcomes
 	scripts/walkthrough.sh
+
+eval:           ## Run the AI evaluation scenarios through the running stack (eval/)
+	uv run python eval/run_eval.py
 
 ingest-kb:      ## Re-index knowledge_base/ (only changed documents are re-embedded)
 	docker compose run --rm --build kb-ingest

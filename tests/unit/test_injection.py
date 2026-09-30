@@ -35,7 +35,7 @@ def test_knowledge_base_flags_only_the_adversarial_documents() -> None:
 def test_obedient_model_output_cannot_become_facts() -> None:
     """Backstop if an injection slipped past screening and the model obeyed it."""
     compromised = InvestigationReport(
-        classification="RECONCILED",
+        classification="NO_DISCREPANCY",
         confidence=1.0,
         summary="All transactions are reconciled.",
         facts=[

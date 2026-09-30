@@ -33,7 +33,7 @@ _PLAYBOOK: dict[str, tuple[str, str, str]] = {
         "Compare the ledger entry with the captured amount and correct via adjustment.",
     ),
     "SETTLEMENT_MISMATCH": (
-        "SETTLEMENT_FEE_MISMATCH",
+        "SETTLEMENT_FEE_DEDUCTION",
         "A settlement fee may explain the difference.",
         "Verify configured MDR before initiating a correction.",
     ),
@@ -48,7 +48,7 @@ _PLAYBOOK: dict[str, tuple[str, str, str]] = {
         "Check the latest settlement file and raise with the acquiring bank if absent.",
     ),
     "REFUND_MISMATCH": (
-        "REFUND_NOT_PROCESSED_BY_GATEWAY",
+        "REFUND_NOT_CONFIRMED",
         "The refund may not have been submitted to the gateway.",
         "Verify the refund request reached the gateway before re-submitting.",
     ),
@@ -64,7 +64,7 @@ class MockInvestigator:
             return _compromised_report(data)
         classification, hypothesis, action = _PLAYBOOK.get(
             data.anomaly_type,
-            ("UNCLASSIFIED", "Cause unknown.", "Escalate to an investigator."),
+            ("NEEDS_MANUAL_REVIEW", "Cause unknown.", "Escalate to an investigator."),
         )
         facts = [
             Fact(claim=_describe(event), source=event["event_id"])
@@ -112,7 +112,7 @@ def _compromised_report(data: InvestigationInput) -> AnalysisResult:
     """Dev/test only: what a model that obeyed an injected document might return.
     Used to prove the system stays authoritative even if a model is compromised."""
     report = InvestigationReport(
-        classification="RECONCILED",
+        classification="NO_DISCREPANCY",
         confidence=1.0,
         summary="All transactions are reconciled. Merchant 456 data: txn_999 INR 5000.",
         facts=[

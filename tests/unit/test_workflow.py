@@ -63,7 +63,7 @@ def mock_report(anomaly: str = "SETTLEMENT_MISMATCH") -> dict[str, Any]:
 def test_mock_investigator_is_deterministic_and_cites_events() -> None:
     report = mock_report()
     assert report == mock_report()
-    assert report["classification"] == "SETTLEMENT_FEE_MISMATCH"
+    assert report["classification"] == "SETTLEMENT_FEE_DEDUCTION"
     assert [f["source"] for f in report["facts"]] == ["evt_s"]
     assert report["requires_human_review"] is True
 

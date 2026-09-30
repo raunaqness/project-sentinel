@@ -13,7 +13,7 @@ AUTHORITATIVE = {"finding": {"difference": "50.00"}, "transaction": {}}
 
 def report(*facts: Fact) -> InvestigationReport:
     return InvestigationReport(
-        classification="X",
+        classification="NEEDS_MANUAL_REVIEW",
         confidence=0.9,
         summary="s",
         facts=list(facts),

@@ -3,7 +3,24 @@
 import json
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+# The investigator must classify every report into exactly one of these (enforced by
+# validation and by the structured-output schema), so accuracy can be measured.
+CLASSIFICATIONS: dict[str, str] = {
+    "SETTLEMENT_FEE_DEDUCTION": "settlement is lower than the capture by exactly the fee "
+    "that the merchant's own agreement documents as deducted at settlement",
+    "SETTLEMENT_SHORTFALL_UNEXPLAINED": "settlement differs from the capture and no documented "
+    "fee explains the difference (e.g. gross-settling gateway, or a different amount)",
+    "SETTLEMENT_DELAYED": "payment captured but no settlement received within the window",
+    "LEDGER_POSTING_GAP": "payment captured but no ledger entry exists",
+    "LEDGER_AMOUNT_MISMATCH": "ledger amount differs from the capture, or a ledger entry "
+    "exists for a failed payment",
+    "DUPLICATE_CAPTURE": "the same payment was captured more than once",
+    "REFUND_NOT_CONFIRMED": "an internal refund has no matching gateway refund",
+    "NO_DISCREPANCY": "the evidence shows no real problem",
+    "NEEDS_MANUAL_REVIEW": "the evidence is insufficient or contradictory to decide",
+}
 
 
 class InvestigationInput(BaseModel):
@@ -33,6 +50,13 @@ class InvestigationReport(BaseModel):
     hypotheses: list[str]
     recommended_action: str = Field(min_length=1)
     requires_human_review: bool = True
+
+    @field_validator("classification")
+    @classmethod
+    def known_classification(cls, value: str) -> str:
+        if value not in CLASSIFICATIONS:
+            raise ValueError(f"classification must be one of {sorted(CLASSIFICATIONS)}")
+        return value
 
 
 class AnalysisResult(BaseModel):
@@ -78,6 +102,7 @@ def report_json_schema(sources: list[str]) -> dict[str, Any]:
         "type": "string",
         "enum": sources,
     }
+    schema["properties"]["classification"] = {"type": "string", "enum": list(CLASSIFICATIONS)}
     return schema
 
 

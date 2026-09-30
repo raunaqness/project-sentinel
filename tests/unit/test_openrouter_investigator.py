@@ -13,7 +13,7 @@ from sentinel.ai.openrouter_investigator import OpenRouterInvestigator
 from sentinel.ai.schemas import InvestigationInput, ReportFormatError
 
 VALID = {
-    "classification": "SETTLEMENT_FEE_MISMATCH",
+    "classification": "SETTLEMENT_FEE_DEDUCTION",
     "confidence": 0.8,
     "summary": "Settlement is INR 50 lower than the capture.",
     "facts": [{"claim": "Settlement amount is INR 9950", "source": "evt_s"}],
@@ -79,7 +79,7 @@ def run(replies: list[httpx2.Response]) -> tuple[Any, list[dict[str, Any]]]:
 
 def test_valid_reply_parsed_with_usage() -> None:
     result, seen = run([completion(json.dumps(VALID))])
-    assert result.report.classification == "SETTLEMENT_FEE_MISMATCH"
+    assert result.report.classification == "SETTLEMENT_FEE_DEDUCTION"
     assert result.meta["prompt_tokens"] == 100 and result.meta["repairs"] == 0
     request = seen[0]
     assert request["model"] == "openai/gpt-4o-mini"
@@ -88,6 +88,8 @@ def test_valid_reply_parsed_with_usage() -> None:
         "properties"
     ]["source"]
     assert source["enum"] == ["finding", "transaction", "evt_s"]  # only ids that exist
+    schema = request["response_format"]["json_schema"]["schema"]
+    assert "SETTLEMENT_FEE_DEDUCTION" in schema["properties"]["classification"]["enum"]
     assert request["temperature"] == 0
 
 
@@ -99,6 +101,7 @@ def test_valid_reply_parsed_with_usage() -> None:
         json.dumps({k: v for k, v in VALID.items() if k != "summary"}),  # missing field
         json.dumps(VALID | {"confidence": 7}),  # out of range
         json.dumps(VALID | {"sql": "DROP TABLE"}),  # unexpected field
+        json.dumps(VALID | {"classification": "RECONCILED"}),  # not in the taxonomy
     ],
 )
 def test_malformed_reply_is_repaired_once(bad: str) -> None:

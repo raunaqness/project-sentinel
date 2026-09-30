@@ -91,7 +91,7 @@ def test_happy_path_produces_verified_report(client: httpx.Client) -> None:
         "COMPLETED",
     ]
     report = inv["report"]
-    assert report["classification"] == "SETTLEMENT_FEE_MISMATCH"
+    assert report["classification"] == "SETTLEMENT_FEE_DEDUCTION"
     assert report["facts"] and report["requires_human_review"] is True
 
 
